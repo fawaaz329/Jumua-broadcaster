@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Masjid Live Audio Broadcast</title>
+  
+  <!-- PeerJS CDN for WebRTC peer-to-peer streaming -->
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+
+  <style>
+    :root {
+      --primary: #0f5132;
+      --primary-dark: #093420;
+      --primary-light: #e8f5e9;
+      --accent: #c5a059;
+      --accent-hover: #b08d46;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --danger: #dc2626;
+      --live-red: #ef4444;
+      --success: #16a34a;
+      --border: #e2e8f0;
+      --radius-lg: 20px;
+      --radius-md: 12px;
+      --radius-sm: 8px;
+      --shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.03);
+      --shadow-lg: 0 20px 30px -10px rgba(15, 81, 50, 0.15);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 100vh;
+      padding: 20px 16px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 480px;
+      margin: auto;
+    }
+
+    /* Mosque Header */
+    .header {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+
+    .bismillah {
+      font-size: 1.1rem;
+      color: var(--accent);
+      margin-bottom: 8px;
+      font-weight: 500;
+      letter-spacing: 1px;
+    }
+
+    .masjid-title {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--primary-dark);
+      letter-spacing: -0.5px;
+    }
+
+    .broadcast-title {
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    /* Main Card */
+    .card {
+      background: var(--card-bg);
+      border-radius: var(--radius-lg);
+      padding: 32px 24px;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Status Badge */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 24px;
+      transition: all 0.3s ease;
+    }
+
+    .status-badge.offline {
+      background-color: #f1f5f9;
+      color: var(--text-muted);
+    }
+
+    .status-badge.connecting {
+      background-color: #fef3c7;
+      color: #92400e;
+    }
+
+    .status-badge.live {
+      background-color: #fee2e2;
+      color: var(--live-red);
+      box-shadow: 0 0 12px rgba(239, 68, 68, 0.2);
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: currentColor;
+    }
+
+    .status-badge.live .dot {
+      animation: pulse-dot 1.5s infinite;
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    /* Visualizer Animation */
+    .wave-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 6px;
+      height: 60px;
+      margin: 15px 0 25px;
+    }
+
+    .wave-bar {
+      width: 5px;
+      height: 8px;
+      background-color: var(--border);
+      border-radius: 4px;
+      transition: height 0.15s ease, background-color 0.3s ease;
+    }
+
+    .live .wave-bar {
+      background-color: var(--primary);
+      animation: wave 1.2s infinite ease-in-out;
+    }
+
+    .live .wave-bar:nth-child(1) { animation-delay: 0.0s; }
+    .live .wave-bar:nth-child(2) { animation-delay: 0.1s; }
+    .live .wave-bar:nth-child(3) { animation-delay: 0.2s; }
+    .live .wave-bar:nth-child(4) { animation-delay: 0.3s; }
+    .live .wave-bar:nth-child(5) { animation-delay: 0.4s; }
+    .live .wave-bar:nth-child(6) { animation-delay: 0.3s; }
+    .live .wave-bar:nth-child(7) { animation-delay: 0.2s; }
+    .live .wave-bar:nth-child(8) { animation-delay: 0.1s; }
+
+    @keyframes wave {
+      0%, 100% { height: 8px; }
+      50% { height: 42px; }
+    }
+
+    /* Big Listener Action Button (for iOS / Mobile autoplay policy) */
+    .btn-action {
+      background-color: var(--primary);
+      color: white;
+      border: none;
+      padding: 16px 28px;
+      font-size: 1rem;
+      font-weight: 600;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      width: 100%;
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      transition: all 0.2s ease;
+      box-shadow: var(--shadow-lg);
+    }
+
+    .btn-action:active {
+      transform: scale(0.98);
+    }
+
+    .btn-action.disabled {
+      background-color: #cbd5e1;
+      box-shadow: none;
+      cursor: not-allowed;
+    }
+
+    /* Admin Panel Overlay */
+    .admin-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    .admin-panel {
+      background: white;
+      width: 100%;
+      max-width: 440px;
+      border-radius: var(--radius-lg);
+      padding: 28px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    }
+
+    .admin-panel h2 {
+      font-size: 1.3rem;
+      color: var(--primary-dark);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .admin-panel .subtitle {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+    }
+
+    .admin-input-group {
+      margin-bottom: 16px;
+      text-align: left;
+    }
+
+    .admin-input-group label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: var(--text);
+    }
+
+    .admin-input {
+      width: 100%;
+      padding: 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      font-size: 0.95rem;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .btn-secondary {
+      background: #f1f5f9;
+      color: var(--text);
+      border: none;
+      padding: 12px;
+      border-radius: var(--radius-sm);
+      font-weight: 600;
+      cursor: pointer;
+      flex: 1;
+    }
+
+    .btn-broadcast-start {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 14px;
+      border-radius: var(--radius-sm);
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+    }
+
+    .btn-broadcast-stop {
+      background: var(--danger);
+      color: white;
+      border: none;
+      padding: 14px;
+      border-radius: var(--radius-sm);
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+    }
+
+    .admin-live-stats {
+      background: var(--primary-light);
+      border: 1px solid #c8e6c9;
+      padding: 14px;
+      border-radius: var(--radius-sm);
+      margin: 16px 0;
+      font-size: 0.9rem;
+      color: var(--primary-dark);
+      display: flex;
+      justify-content: space-around;
+    }
+
+    /* Footer */
+    .footer {
+      text-align: center;
+      margin-top: 32px;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .committee-link {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      cursor: pointer;
+      margin-top: 10px;
+      text-decoration: underline;
+      opacity: 0.7;
+    }
+
+    .committee-link:hover {
+      opacity: 1;
+      color: var(--primary);
+    }
+
+    /* Notice banner */
+    .ios-notice {
+      display: none;
+      margin-top: 15px;
+      padding: 10px;
+      background-color: #fffbeb;
+      border: 1px solid #fef3c7;
+      border-radius: var(--radius-sm);
+      font-size: 0.8rem;
+      color: #92400e;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="bismillah">بِسْمِ ٱللَّٰهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ</div>
+      <h1 class="masjid-title">Masjid Community</h1>
+      <p class="broadcast-title">Jumu'ah Khutbah &amp; Prayer Live Audio</p>
+    </header>
+
+    <!-- Main Card (Listener Experience) -->
+    <main class="card" id="listenerCard">
+      <!-- Live Status Pill -->
+      <div id="statusBadge" class="status-badge offline">
+        <span class="dot"></span>
+        <span id="statusText">Connecting...</span>
+      </div>
+
+      <!-- Animated Audio Waves -->
+      <div class="wave-container" id="waveContainer">
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+      </div>
+
+      <p id="listenerStatusMsg" style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 20px;">
+        Listening for prayer broadcast...
+      </p>
+
+      <!-- Action Button for Autoplay / Unmute restrictions on mobile -->
+      <button id="btnPlayStream" class="btn-action disabled" disabled>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        <span>Waiting for Stream</span>
+      </button>
+
+      <div class="ios-notice" id="iosNotice">
+        Note: If you hear no sound on mobile, please ensure your phone is not in Silent/Vibrate mode.
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <p>Direct WebRTC Audio Stream &bull; Low Latency</p>
+      <button class="committee-link" id="btnOpenAuth">Committee Login</button>
+    </footer>
+  </div>
+
+  <!-- Admin Broadcast Modal (Committee Panel) -->
+  <div class="admin-modal" id="adminModal">
+    <div class="admin-panel" id="adminAuthSection">
+      <h2>Committee Access</h2>
+      <p class="subtitle">Enter the password to access microphone controls.</p>
+      <div class="admin-input-group">
+        <label for="adminPass">Password</label>
+        <input type="password" id="adminPass" class="admin-input" placeholder="Enter password...">
+      </div>
+      <div class="btn-group">
+        <button class="btn-secondary" id="btnCancelAuth">Cancel</button>
+        <button class="btn-action" style="flex: 1;" id="btnSubmitAuth">Unlock</button>
+      </div>
+    </div>
+
+    <!-- Active Broadcaster Dashboard -->
+    <div class="admin-panel" id="adminDashboardSection" style="display: none;">
+      <h2>
+        <span>Broadcaster Panel</span>
+        <span style="font-size: 0.75rem; background: var(--primary-light); color: var(--primary); padding: 4px 8px; border-radius: 6px;">Admin</span>
+      </h2>
+      <p class="subtitle">Broadcast your phone mic directly to the congregation.</p>
+
+      <div class="admin-live-stats">
+        <div>Listeners: <strong id="statListeners">0</strong></div>
+        <div>Status: <strong id="statBroadcastStatus">Ready</strong></div>
+      </div>
+
+      <div style="margin-bottom: 20px;">
+        <button id="btnStartBroadcast" class="btn-broadcast-start">Start Phone Broadcast</button>
+        <button id="btnStopBroadcast" class="btn-broadcast-stop" style="display: none;">Stop Broadcast</button>
+      </div>
+
+      <p style="font-size: 0.75rem; color: var(--text-muted); line-height: 1.4;">
+        Tip: Keep this browser tab active. Connect an external lapel or wireless mic to your phone for clearer audio.
+      </p>
+
+      <div class="btn-group" style="margin-top: 15px;">
+        <button class="btn-secondary" id="btnCloseAdmin">Switch to Listener View</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden HTML5 Audio Element for playback -->
+  <audio id="remoteAudio" autoplay playsinline></audio>
+
+  <script>
+    /**
+     * CONFIGURATION
+     * You can customize the BROADCASTER_PEER_ID and ADMIN_PASSWORD below.
+     */
+    const BROADCASTER_PEER_ID = 'masjid-community-jumuah-stream';
+    const ADMIN_PASSWORD = 'admin'; // Change this to your preferred PIN/Password
+
+    // PeerJS Server Config (uses PeerJS free cloud servers)
+    const peerConfig = {
+      debug: 1,
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:global.stun.twilio.com:3478' }
+        ]
+      }
+    };
+
+    /* --- DOM Elements --- */
+    const statusBadge = document.getElementById('statusBadge');
+    const statusText = document.getElementById('statusText');
+    const listenerCard = document.getElementById('listenerCard');
+    const listenerStatusMsg = document.getElementById('listenerStatusMsg');
+    const btnPlayStream = document.getElementById('btnPlayStream');
+    const iosNotice = document.getElementById('iosNotice');
+    const remoteAudio = document.getElementById('remoteAudio');
+
+    // Admin Elements
+    const adminModal = document.getElementById('adminModal');
+    const btnOpenAuth = document.getElementById('btnOpenAuth');
+    const btnCancelAuth = document.getElementById('btnCancelAuth');
+    const btnSubmitAuth = document.getElementById('btnSubmitAuth');
+    const adminPassInput = document.getElementById('adminPass');
+    const adminAuthSection = document.getElementById('adminAuthSection');
+    const adminDashboardSection = document.getElementById('adminDashboardSection');
+    const btnCloseAdmin = document.getElementById('btnCloseAdmin');
+    const btnStartBroadcast = document.getElementById('btnStartBroadcast');
+    const btnStopBroadcast = document.getElementById('btnStopBroadcast');
+    const statListeners = document.getElementById('statListeners');
+    const statBroadcastStatus = document.getElementById('statBroadcastStatus');
+
+    /* --- App State --- */
+    let listenerPeer = null;
+    let broadcasterPeer = null;
+    let localMediaStream = null;
+    let activeConnections = new Map();
+    let isBroadcasting = false;
+    let pollInterval = null;
+
+    /* ==========================================================
+       LISTENER LOGIC (Default for all users)
+       ========================================================== */
+    function initListener() {
+      // Create a random Peer ID for the listener
+      listenerPeer = new Peer(peerConfig);
+
+      listenerPeer.on('open', (id) => {
+        console.log('Listener registered with ID:', id);
+        attemptConnectionToBroadcaster();
+        
+        // Retry connection every 6 seconds if offline
+        clearInterval(pollInterval);
+        pollInterval = setInterval(() => {
+          if (!remoteAudio.srcObject || remoteAudio.paused) {
+            attemptConnectionToBroadcaster();
+          }
+        }, 6000);
+      });
+
+      listenerPeer.on('error', (err) => {
+        console.warn('Listener Peer warning:', err.type);
+        if (err.type === 'peer-unavailable') {
+          setUIOffline();
+        }
+      });
+    }
+
+    function attemptConnectionToBroadcaster() {
+      if (!listenerPeer || listenerPeer.destroyed || isBroadcasting) return;
+
+      // Create a silent dummy audio track so peer.call() can negotiate WebRTC audio receiving
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = ctx.createOscillator();
+      const dst = oscillator.connect(ctx.createMediaStreamDestination());
+      oscillator.start();
+      const dummyStream = dst.stream;
+      dummyStream.getAudioTracks().forEach(t => t.enabled = false);
+
+      const call = listenerPeer.call(BROADCASTER_PEER_ID, dummyStream);
+
+      if (!call) return;
+
+      call.on('stream', (remoteStream) => {
+        setUILive();
+        remoteAudio.srcObject = remoteStream;
+
+        // Handle browser autoplay policy
+        const playPromise = remoteAudio.play();
+        if (playPromise !== undefined) {
+          playPromise.then(() => {
+            btnPlayStream.innerHTML = `<span>Listening to Live Audio</span>`;
+            btnPlayStream.classList.remove('disabled');
+            btnPlayStream.disabled = false;
+            iosNotice.style.display = 'block';
+          }).catch((err) => {
+            console.log('Autoplay prevented by browser. Requiring user touch interaction:', err);
+            btnPlayStream.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> <span>Tap to Hear Broadcast</span>`;
+            btnPlayStream.classList.remove('disabled');
+            btnPlayStream.disabled = false;
+          });
+        }
+      });
+
+      call.on('close', () => {
+        setUIOffline();
+      });
+
+      call.on('error', () => {
+        setUIOffline();
+      });
+    }
+
+    function setUILive() {
+      statusBadge.className = 'status-badge live';
+      statusText.textContent = 'Live Now';
+      listenerCard.classList.add('live');
+      listenerStatusMsg.textContent = "You are connected to the live khutbah audio.";
+    }
+
+    function setUIOffline() {
+      statusBadge.className = 'status-badge offline';
+      statusText.textContent = 'Broadcast Offline';
+      listenerCard.classList.remove('live');
+      listenerStatusMsg.textContent = 'Waiting for the broadcast to start...';
+      btnPlayStream.classList.add('disabled');
+      btnPlayStream.disabled = true;
+      btnPlayStream.innerHTML = `<span>Broadcast Offline</span>`;
+      iosNotice.style.display = 'none';
+      if (remoteAudio.srcObject) {
+        remoteAudio.srcObject = null;
+      }
+    }
+
+    // Manual click on Listen button (satisfies mobile autoplay restrictions)
+    btnPlayStream.addEventListener('click', () => {
+      if (remoteAudio.srcObject) {
+        remoteAudio.play();
+        btnPlayStream.innerHTML = `<span>Listening Live</span>`;
+        iosNotice.style.display = 'block';
+      }
+    });
+
+    /* ==========================================================
+       BROADCASTER LOGIC (Committee / Admin View)
+       ========================================================== */
+    btnStartBroadcast.addEventListener('click', async () => {
+      try {
+        // Request Phone Mic with optimal speech settings
+        localMediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          },
+          video: false
+        });
+
+        // Destroy listener peer to free up resources/prevent conflicts
+        if (listenerPeer) {
+          clearInterval(pollInterval);
+          listenerPeer.destroy();
+          listenerPeer = null;
+        }
+
+        // Initialize Broadcaster Peer with the fixed community ID
+        broadcasterPeer = new Peer(BROADCASTER_PEER_ID, peerConfig);
+
+        broadcasterPeer.on('open', (id) => {
+          isBroadcasting = true;
+          statBroadcastStatus.textContent = 'ON AIR';
+          statBroadcastStatus.style.color = 'var(--danger)';
+          btnStartBroadcast.style.display = 'none';
+          btnStopBroadcast.style.display = 'block';
+        });
+
+        // Answer incoming listener connections
+        broadcasterPeer.on('call', (call) => {
+          call.answer(localMediaStream);
+          
+          activeConnections.set(call.peer, call);
+          updateListenerCount();
+
+          call.on('close', () => {
+            activeConnections.delete(call.peer);
+            updateListenerCount();
+          });
+
+          call.on('error', () => {
+            activeConnections.delete(call.peer);
+            updateListenerCount();
+          });
+        });
+
+        broadcasterPeer.on('error', (err) => {
+          if (err.type === 'unavailable-id') {
+            alert('A broadcast is already running with this ID on another device.');
+          } else {
+            console.error('Broadcaster error:', err);
+            alert('Broadcast error: ' + err.message);
+          }
+          stopBroadcast();
+        });
+
+      } catch (err) {
+        console.error('Microphone access denied or error:', err);
+        alert('Microphone Permission Error: Please allow microphone access in your browser settings.');
+      }
+    });
+
+    function stopBroadcast() {
+      if (localMediaStream) {
+        localMediaStream.getTracks().forEach(track => track.stop());
+        localMediaStream = null;
+      }
+
+      if (broadcasterPeer) {
+        broadcasterPeer.destroy();
+        broadcasterPeer = null;
+      }
+
+      activeConnections.clear();
+      isBroadcasting = false;
+      updateListenerCount();
+
+      statBroadcastStatus.textContent = 'Stopped';
+      statBroadcastStatus.style.color = 'inherit';
+      btnStartBroadcast.style.display = 'block';
+      btnStopBroadcast.style.display = 'none';
+    }
+
+    btnStopBroadcast.addEventListener('click', stopBroadcast);
+
+    function updateListenerCount() {
+      statListeners.textContent = activeConnections.size;
+    }
+
+    /* ==========================================================
+       AUTHENTICATION / ADMIN MODAL HANDLING
+       ========================================================== */
+    btnOpenAuth.addEventListener('click', () => {
+      adminModal.style.display = 'flex';
+      adminPassInput.value = '';
+      adminPassInput.focus();
+    });
+
+    btnCancelAuth.addEventListener('click', () => {
+      adminModal.style.display = 'none';
+    });
+
+    btnSubmitAuth.addEventListener('click', handleAuth);
+    adminPassInput.addEventListener('keyup', (e) => {
+      if (e.key === 'Enter') handleAuth();
+    });
+
+    function handleAuth() {
+      const enteredPass = adminPassInput.value;
+      if (enteredPass === ADMIN_PASSWORD) {
+        adminAuthSection.style.display = 'none';
+        adminDashboardSection.style.display = 'block';
+      } else {
+        alert('Incorrect password.');
+        adminPassInput.value = '';
+      }
+    }
+
+    btnCloseAdmin.addEventListener('click', () => {
+      adminModal.style.display = 'none';
+      adminAuthSection.style.display = 'block';
+      adminDashboardSection.style.display = 'none';
+
+      // If user isn't broadcasting, resume listener mode
+      if (!isBroadcasting && !listenerPeer) {
+        initListener();
+      }
+    });
+
+    // Start in Listener Mode upon page load
+    window.addEventListener('DOMContentLoaded', initListener);
+  </script>
+</body>
+</html>
