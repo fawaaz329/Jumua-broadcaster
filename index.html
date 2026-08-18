@@ -447,11 +447,11 @@
   <script>
     /**
      * ==========================================
-     * LIVEKIT CLOUD CREDENTIALS
+     * LIVEKIT CLOUD MATCHED CREDENTIALS
      * ==========================================
      */
     const LIVEKIT_URL = "wss://jumua-broadcaster-oyeasoms.livekit.cloud";
-    const LIVEKIT_API_KEY = "APIRiHH8b4bK3ry";
+    const LIVEKIT_API_KEY = "API4jXNasBc3i9K";
     const LIVEKIT_API_SECRET = "FheHgJrCd7Y1EXVoZgjmTExSL0a8RLz1yAmR3o6YKqb";
     const ROOM_NAME = "masjid-jumuah-live-room";
     const DEFAULT_ADMIN_PASSWORD = "admin";
@@ -508,7 +508,7 @@
     let listenerPollTimer = null;
 
     /* ==========================================================
-       1. OFFICIAL JOSE JWT TOKEN GENERATOR (Full Schema + Buffer)
+       1. OFFICIAL JOSE JWT TOKEN GENERATOR (MATCHED SIGNATURE)
        ========================================================== */
     async function generateLiveKitJWT(identity, isPublisher) {
       const secret = new TextEncoder().encode(LIVEKIT_API_SECRET);
@@ -527,8 +527,8 @@
         .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
         .setIssuer(LIVEKIT_API_KEY)
         .setSubject(identity)
-        .setIssuedAt(now - 30)          // 30s buffer for mobile clock drift
-        .setNotBefore(now - 30)         // Valid immediately
+        .setIssuedAt(now - 60)          // 60s buffer for mobile network time drift
+        .setNotBefore(now - 60)         // Valid immediately
         .setExpirationTime(now + 86400) // Valid for 24 hours
         .sign(secret);
 
