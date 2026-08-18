@@ -1,0 +1,1072 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Masjid Live Audio Broadcast</title>
+  
+  <!-- PeerJS CDN for WebRTC direct audio streaming -->
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+
+  <style>
+    :root {
+      --primary: #0b5e39;
+      --primary-dark: #073b24;
+      --primary-light: #e6f4ea;
+      --accent: #c99738;
+      --bg: #f4f6f8;
+      --card: #ffffff;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --danger: #dc2626;
+      --live-red: #ef4444;
+      --border: #e2e8f0;
+      --radius: 16px;
+      --shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.06), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 440px;
+      margin: auto;
+    }
+
+    /* Top Navigation Bar */
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .masjid-brand {
+      font-weight: 700;
+      font-size: 1.1rem;
+      color: var(--primary-dark);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-switch-mode {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 6px 12px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      border-radius: 20px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+    }
+
+    .btn-switch-mode:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
+    /* Mosque Header */
+    .header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .bismillah {
+      font-size: 1.1rem;
+      color: var(--accent);
+      margin-bottom: 6px;
+      font-weight: 500;
+    }
+
+    .title {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--primary-dark);
+    }
+
+    .subtitle {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    /* Card */
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 28px 20px;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      text-align: center;
+    }
+
+    /* Status Pill */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 20px;
+    }
+
+    .status-badge.offline {
+      background-color: #f1f5f9;
+      color: var(--text-muted);
+    }
+
+    .status-badge.live {
+      background-color: #fee2e2;
+      color: var(--live-red);
+      box-shadow: 0 0 10px rgba(239, 68, 68, 0.2);
+    }
+
+    .status-badge.locked {
+      background-color: #fef3c7;
+      color: #92400e;
+    }
+
+    .status-badge.loading {
+      background-color: #fef3c7;
+      color: #92400e;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: currentColor;
+    }
+
+    .status-badge.live .dot {
+      animation: pulse-dot 1.5s infinite;
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.3; transform: scale(0.8); }
+    }
+
+    /* Wave Animation */
+    .wave-box {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 5px;
+      height: 50px;
+      margin-bottom: 20px;
+    }
+
+    .wave-bar {
+      width: 4px;
+      height: 6px;
+      background-color: var(--border);
+      border-radius: 3px;
+      transition: all 0.2s ease;
+    }
+
+    .is-live .wave-bar {
+      background-color: var(--primary);
+      animation: wave-anim 1.2s infinite ease-in-out;
+    }
+
+    .is-live .wave-bar:nth-child(1) { animation-delay: 0.0s; }
+    .is-live .wave-bar:nth-child(2) { animation-delay: 0.15s; }
+    .is-live .wave-bar:nth-child(3) { animation-delay: 0.3s; }
+    .is-live .wave-bar:nth-child(4) { animation-delay: 0.45s; }
+    .is-live .wave-bar:nth-child(5) { animation-delay: 0.3s; }
+    .is-live .wave-bar:nth-child(6) { animation-delay: 0.15s; }
+    .is-live .wave-bar:nth-child(7) { animation-delay: 0.0s; }
+
+    @keyframes wave-anim {
+      0%, 100% { height: 6px; }
+      50% { height: 36px; }
+    }
+
+    /* WakeLock Pill */
+    .wakelock-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-bottom: 18px;
+    }
+
+    .wakelock-pill.active {
+      background: #f0fdf4;
+      border-color: #bbf7d0;
+      color: #166534;
+      font-weight: 600;
+    }
+
+    /* Warning Banner for Clash Prevention */
+    .lock-banner {
+      display: none;
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      color: #92400e;
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-size: 0.8rem;
+      margin-bottom: 15px;
+      line-height: 1.4;
+      text-align: left;
+    }
+
+    /* Buttons */
+    .btn-main {
+      background-color: var(--primary);
+      color: white;
+      border: none;
+      padding: 15px;
+      font-size: 1rem;
+      font-weight: 600;
+      border-radius: 12px;
+      cursor: pointer;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+
+    .btn-main:active { transform: scale(0.98); }
+    .btn-main.disabled, .btn-main:disabled {
+      background-color: #94a3b8 !important;
+      cursor: not-allowed;
+      opacity: 0.7;
+    }
+
+    .btn-danger {
+      background-color: var(--danger);
+      color: white;
+      border: none;
+      padding: 15px;
+      font-size: 1rem;
+      font-weight: 600;
+      border-radius: 12px;
+      cursor: pointer;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Broadcaster Dashboard */
+    .broadcaster-stats {
+      display: flex;
+      justify-content: space-around;
+      background: var(--primary-light);
+      border: 1px solid #c8e6c9;
+      padding: 12px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      font-size: 0.9rem;
+      color: var(--primary-dark);
+    }
+
+    .meter-container {
+      background: #e2e8f0;
+      border-radius: 8px;
+      height: 12px;
+      width: 100%;
+      overflow: hidden;
+      margin: 10px 0 20px;
+    }
+
+    .meter-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #16a34a 0%, #eab308 75%, #dc2626 100%);
+      transition: width 0.05s linear;
+    }
+
+    .pin-input {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 1rem;
+      text-align: center;
+      margin-bottom: 15px;
+    }
+
+    /* Settings Accordion */
+    .settings-box {
+      margin-top: 20px;
+      padding-top: 15px;
+      border-top: 1px solid var(--border);
+      text-align: left;
+    }
+
+    .settings-toggle {
+      background: none;
+      border: none;
+      color: var(--primary);
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-bottom: 10px;
+    }
+
+    .logout-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      margin-top: 15px;
+      text-decoration: underline;
+      cursor: pointer;
+      width: 100%;
+      text-align: center;
+    }
+
+    .footer {
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 24px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <!-- Top Navigation Bar -->
+    <div class="top-bar">
+      <div class="masjid-brand">
+        <span>🕌</span> Masjid Live
+      </div>
+      <button class="btn-switch-mode" id="btnToggleMode">
+        <span id="switchIcon">🎙️</span>
+        <span id="switchText">Broadcaster Login</span>
+      </button>
+    </div>
+
+    <!-- Header -->
+    <div class="header">
+      <div class="bismillah">بِسْمِ ٱللَّٰهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ</div>
+      <h1 class="title">Jumu'ah Audio Stream</h1>
+      <p class="subtitle">Live Khutbah &amp; Community Broadcast</p>
+    </div>
+
+    <!-- ==================== VIEW 1: LISTENER VIEW (DEFAULT) ==================== -->
+    <div class="card" id="viewListener">
+      <div id="listenerStatusBadge" class="status-badge offline">
+        <span class="dot"></span>
+        <span id="listenerStatusText">Broadcast Offline</span>
+      </div>
+
+      <div class="wave-box" id="listenerWaveBox">
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+      </div>
+
+      <div class="wakelock-pill" id="listenerWakePill">
+        <span>💡</span>
+        <span id="listenerWakeText">Screen will stay awake while listening</span>
+      </div>
+
+      <p id="listenerMsg" style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 20px;">
+        Waiting for the broadcast to begin...
+      </p>
+
+      <button id="btnPlayAudio" class="btn-main disabled" disabled>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        <span id="btnPlayAudioText">Waiting for Stream</span>
+      </button>
+
+      <button id="btnStopListening" class="btn-danger" style="display: none; margin-top: 10px;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>
+        <span>Pause Audio</span>
+      </button>
+    </div>
+
+    <!-- ==================== VIEW 2: ADMIN PASSWORD ==================== -->
+    <div class="card" id="viewAuth" style="display: none;">
+      <h2 style="font-size: 1.2rem; color: var(--primary-dark); margin-bottom: 6px;">Broadcaster Login</h2>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 18px;">
+        Enter password to access microphone controls.
+      </p>
+      
+      <input type="password" id="inputPass" class="pin-input" placeholder="Enter password...">
+      
+      <div style="display: flex; gap: 10px;">
+        <button class="btn-switch-mode" style="flex: 1; justify-content: center;" id="btnCancelAuth">Cancel</button>
+        <button class="btn-main" style="flex: 1;" id="btnSubmitAuth">Unlock</button>
+      </div>
+    </div>
+
+    <!-- ==================== VIEW 3: BROADCASTER CONSOLE ==================== -->
+    <div class="card" id="viewBroadcaster" style="display: none;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+        <span style="font-weight: 700; color: var(--primary-dark); font-size: 1.1rem;">Broadcast Control</span>
+        <span id="bcastBadge" class="status-badge offline" style="margin-bottom: 0;">Ready</span>
+      </div>
+
+      <!-- Banner if another Admin is broadcasting -->
+      <div class="lock-banner" id="adminClashBanner">
+        🔒 <strong>Broadcast In Progress:</strong> Another Admin device is currently ON AIR broadcasting. Controls are locked on this device to prevent interruption.
+      </div>
+
+      <div class="broadcaster-stats">
+        <div>Listeners: <strong id="statListenerCount" style="color: var(--primary);">0</strong></div>
+        <div>Security: <strong style="color: var(--primary);">Auto-Lock (5m)</strong></div>
+      </div>
+
+      <div style="text-align: left; font-size: 0.8rem; font-weight: 600; color: var(--text-muted);">
+        Microphone Audio Level:
+      </div>
+      <div class="meter-container">
+        <div id="meterFill" class="meter-fill"></div>
+      </div>
+
+      <button id="btnStartBroadcast" class="btn-main">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+        <span id="btnStartBroadcastText">Start Phone Broadcast</span>
+      </button>
+
+      <button id="btnStopBroadcast" class="btn-danger" style="display: none;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>
+        <span>End Broadcast</span>
+      </button>
+
+      <!-- Settings / Change Password Section (Protected) -->
+      <div class="settings-box">
+        <button class="settings-toggle" id="btnToggleSettings">
+          <span>⚙️ Change Admin Password</span>
+        </button>
+        
+        <div id="settingsPanel" style="display: none; margin-top: 10px;">
+          <input type="password" id="inputCurrentPass" class="pin-input" style="font-size: 0.85rem; padding: 8px; margin-bottom: 6px;" placeholder="Current Password">
+          <input type="password" id="inputNewPass" class="pin-input" style="font-size: 0.85rem; padding: 8px; margin-bottom: 8px;" placeholder="New Password">
+          <button class="btn-main" style="padding: 10px; font-size: 0.85rem;" id="btnSaveNewPass">Update Password</button>
+        </div>
+      </div>
+
+      <button class="logout-btn" id="btnLogoutAdmin">🔒 Lock &amp; Return to Listener View</button>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      PeerJS WebRTC Broadcast &bull; Ultra-Low Latency &bull; Secure Mode
+    </div>
+  </div>
+
+  <!-- Hidden Audio Element for Listeners -->
+  <audio id="audioPlayer" autoplay playsinline></audio>
+
+  <script>
+    const BROADCASTER_PEER_ID = 'masjid-community-jumuah-stream';
+    const DEFAULT_ADMIN_PASSWORD = 'admin';
+
+    function getAdminPassword() {
+      return localStorage.getItem('masjid_admin_custom_password') || DEFAULT_ADMIN_PASSWORD;
+    }
+
+    const peerConfig = {
+      debug: 1,
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:global.stun.twilio.com:3478' }
+        ]
+      }
+    };
+
+    /* --- DOM Elements --- */
+    const viewListener = document.getElementById('viewListener');
+    const viewAuth = document.getElementById('viewAuth');
+    const viewBroadcaster = document.getElementById('viewBroadcaster');
+    const btnToggleMode = document.getElementById('btnToggleMode');
+    const switchText = document.getElementById('switchText');
+    const switchIcon = document.getElementById('switchIcon');
+
+    const listenerStatusBadge = document.getElementById('listenerStatusBadge');
+    const listenerStatusText = document.getElementById('listenerStatusText');
+    const listenerWaveBox = document.getElementById('listenerWaveBox');
+    const listenerMsg = document.getElementById('listenerMsg');
+    const btnPlayAudio = document.getElementById('btnPlayAudio');
+    const btnPlayAudioText = document.getElementById('btnPlayAudioText');
+    const btnStopListening = document.getElementById('btnStopListening');
+    const listenerWakePill = document.getElementById('listenerWakePill');
+    const audioPlayer = document.getElementById('audioPlayer');
+
+    const inputPass = document.getElementById('inputPass');
+    const btnSubmitAuth = document.getElementById('btnSubmitAuth');
+    const btnCancelAuth = document.getElementById('btnCancelAuth');
+    const btnStartBroadcast = document.getElementById('btnStartBroadcast');
+    const btnStartBroadcastText = document.getElementById('btnStartBroadcastText');
+    const btnStopBroadcast = document.getElementById('btnStopBroadcast');
+    const btnLogoutAdmin = document.getElementById('btnLogoutAdmin');
+    const bcastBadge = document.getElementById('bcastBadge');
+    const statListenerCount = document.getElementById('statListenerCount');
+    const meterFill = document.getElementById('meterFill');
+    const adminClashBanner = document.getElementById('adminClashBanner');
+
+    const btnToggleSettings = document.getElementById('btnToggleSettings');
+    const settingsPanel = document.getElementById('settingsPanel');
+    const inputCurrentPass = document.getElementById('inputCurrentPass');
+    const inputNewPass = document.getElementById('inputNewPass');
+    const btnSaveNewPass = document.getElementById('btnSaveNewPass');
+
+    /* --- State --- */
+    let currentMode = 'listener';
+    let listenerPeer = null;
+    let broadcasterPeer = null;
+    let localMicStream = null;
+    let activeCalls = new Map();
+    let pollTimer = null;
+    let audioContext = null;
+    let meterAnimFrame = null;
+    let wakeLockSentinel = null;
+    let isBroadcasting = false;
+    let isListening = false;
+    let isOtherDeviceBroadcasting = false;
+    let idleTimer = null;
+
+    /* ==========================================================
+       1. SECURITY: INACTIVITY AUTO-LOCK (5 Minutes)
+       ========================================================== */
+    function resetIdleTimer() {
+      clearTimeout(idleTimer);
+      // Auto lock after 5 minutes (300,000 ms) if NOT actively broadcasting
+      idleTimer = setTimeout(() => {
+        if (!isBroadcasting && currentMode === 'broadcaster') {
+          sessionStorage.removeItem('masjid_admin_logged_in');
+          showView('listener');
+          alert('Admin console automatically locked due to inactivity.');
+        }
+      }, 300000);
+    }
+
+    ['touchstart', 'mousemove', 'keydown', 'click'].forEach(evt => {
+      document.addEventListener(evt, resetIdleTimer);
+    });
+
+    /* ==========================================================
+       2. ACCIDENTAL REFRESH / SWIPE PROTECTION
+       ========================================================== */
+    window.addEventListener('beforeunload', (e) => {
+      if (isBroadcasting) {
+        e.preventDefault();
+        e.returnValue = 'A broadcast is currently live. Leaving will end the stream.';
+      }
+      if (broadcasterPeer) broadcasterPeer.destroy();
+      if (listenerPeer) listenerPeer.destroy();
+    });
+
+    /* ==========================================================
+       3. SCREEN WAKE LOCK
+       ========================================================== */
+    async function acquireWakeLock() {
+      if ('wakeLock' in navigator) {
+        try {
+          wakeLockSentinel = await navigator.wakeLock.request('screen');
+          listenerWakePill.classList.add('active');
+          listenerWakePill.innerHTML = `<span>💡</span> Screen Kept Awake (Active)`;
+
+          wakeLockSentinel.addEventListener('release', () => {
+            wakeLockSentinel = null;
+          });
+        } catch (err) {
+          console.warn('Wake Lock error:', err);
+        }
+      }
+    }
+
+    function releaseWakeLock() {
+      if (wakeLockSentinel) {
+        wakeLockSentinel.release().then(() => {
+          wakeLockSentinel = null;
+        });
+      }
+      listenerWakePill.classList.remove('active');
+      listenerWakePill.innerHTML = `<span>💡</span> Screen will stay awake while listening`;
+    }
+
+    document.addEventListener('visibilitychange', async () => {
+      if (document.visibilityState === 'visible') {
+        if (isBroadcasting || isListening) {
+          await acquireWakeLock();
+        }
+      }
+    });
+
+    /* ==========================================================
+       4. ADMIN AUTH & SECURE PASSWORD SETTINGS
+       ========================================================== */
+    btnToggleMode.addEventListener('click', () => {
+      if (sessionStorage.getItem('masjid_admin_logged_in') === 'true') {
+        showView(currentMode === 'broadcaster' ? 'listener' : 'broadcaster');
+      } else {
+        showView('auth');
+      }
+    });
+
+    btnCancelAuth.addEventListener('click', () => showView('listener'));
+
+    btnSubmitAuth.addEventListener('click', () => {
+      if (inputPass.value === getAdminPassword()) {
+        sessionStorage.setItem('masjid_admin_logged_in', 'true');
+        showView('broadcaster');
+        inputPass.value = '';
+        resetIdleTimer();
+      } else {
+        alert('Incorrect password.');
+      }
+    });
+
+    inputPass.addEventListener('keyup', (e) => {
+      if (e.key === 'Enter') btnSubmitAuth.click();
+    });
+
+    btnLogoutAdmin.addEventListener('click', () => {
+      if (isBroadcasting) stopBroadcasting();
+      sessionStorage.removeItem('masjid_admin_logged_in');
+      showView('listener');
+    });
+
+    btnToggleSettings.addEventListener('click', () => {
+      settingsPanel.style.display = settingsPanel.style.display === 'none' ? 'block' : 'none';
+      inputCurrentPass.value = '';
+      inputNewPass.value = '';
+    });
+
+    // Secure Password Change (Requires Current Password verification)
+    btnSaveNewPass.addEventListener('click', () => {
+      const currentEntered = inputCurrentPass.value;
+      const newPass = inputNewPass.value.trim();
+
+      if (currentEntered !== getAdminPassword()) {
+        alert('Verification Failed: Current password is incorrect.');
+        return;
+      }
+
+      if (newPass.length < 3) {
+        alert('New password must be at least 3 characters long.');
+        return;
+      }
+
+      localStorage.setItem('masjid_admin_custom_password', newPass);
+      alert('Password updated successfully!');
+      inputCurrentPass.value = '';
+      inputNewPass.value = '';
+      settingsPanel.style.display = 'none';
+    });
+
+    function showView(mode) {
+      currentMode = mode;
+      viewListener.style.display = (mode === 'listener') ? 'block' : 'none';
+      viewAuth.style.display = (mode === 'auth') ? 'block' : 'none';
+      viewBroadcaster.style.display = (mode === 'broadcaster') ? 'block' : 'none';
+
+      const isLoggedIn = sessionStorage.getItem('masjid_admin_logged_in') === 'true';
+
+      if (mode === 'listener') {
+        switchText.textContent = isLoggedIn ? 'Broadcaster Console' : 'Broadcaster Login';
+        switchIcon.textContent = '🎙️';
+        initListenerMode();
+      } else if (mode === 'broadcaster') {
+        switchText.textContent = 'Listener Mode';
+        switchIcon.textContent = '🎧';
+        teardownListenerMode();
+        checkAdminBroadcastClash();
+      } else if (mode === 'auth') {
+        inputPass.focus();
+      }
+    }
+
+    /* Check if another Admin is already broadcasting before letting this device start */
+    function checkAdminBroadcastClash() {
+      if (isBroadcasting) return;
+
+      if (isOtherDeviceBroadcasting) {
+        adminClashBanner.style.display = 'block';
+        btnStartBroadcast.disabled = true;
+        btnStartBroadcast.classList.add('disabled');
+        btnStartBroadcastText.textContent = 'Locked (Other Admin Live)';
+        bcastBadge.className = 'status-badge locked';
+        bcastBadge.textContent = 'Occupied';
+      } else {
+        adminClashBanner.style.display = 'none';
+        btnStartBroadcast.disabled = false;
+        btnStartBroadcast.classList.remove('disabled');
+        btnStartBroadcastText.textContent = 'Start Phone Broadcast';
+        bcastBadge.className = 'status-badge offline';
+        bcastBadge.textContent = 'Ready';
+      }
+    }
+
+    /* ==========================================================
+       5. LISTENER ENGINE
+       ========================================================== */
+    function initListenerMode() {
+      if (listenerPeer && !listenerPeer.destroyed) return;
+
+      listenerPeer = new Peer(peerConfig);
+
+      listenerPeer.on('open', () => {
+        attemptConnectToKhutbah();
+        clearInterval(pollTimer);
+        pollTimer = setInterval(() => {
+          if (!isListening) {
+            attemptConnectToKhutbah();
+          }
+        }, 3500);
+      });
+
+      listenerPeer.on('disconnected', () => {
+        if (!isBroadcasting && listenerPeer && !listenerPeer.destroyed) {
+          listenerPeer.reconnect();
+        }
+      });
+
+      listenerPeer.on('error', (err) => {
+        if (err.type === 'network') {
+          if (listenerPeer && !listenerPeer.destroyed) listenerPeer.reconnect();
+        } else if (err.type === 'peer-unavailable') {
+          isOtherDeviceBroadcasting = false;
+          setListenerOfflineUI();
+        }
+      });
+    }
+
+    function attemptConnectToKhutbah() {
+      if (!listenerPeer || listenerPeer.destroyed || isBroadcasting) return;
+
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const dst = osc.connect(ctx.createMediaStreamDestination());
+      osc.start();
+      const dummyStream = dst.stream;
+      dummyStream.getAudioTracks().forEach(t => t.enabled = false);
+
+      const call = listenerPeer.call(BROADCASTER_PEER_ID, dummyStream);
+      if (!call) return;
+
+      call.on('stream', (remoteStream) => {
+        isOtherDeviceBroadcasting = true;
+        setListenerLiveUI();
+        audioPlayer.srcObject = remoteStream;
+        
+        const playPromise = audioPlayer.play();
+        if (playPromise !== undefined) {
+          playPromise.then(() => {
+            onAudioPlaybackStarted();
+          }).catch(() => {
+            btnPlayAudio.classList.remove('disabled');
+            btnPlayAudio.disabled = false;
+            btnPlayAudioText.textContent = 'Tap to Listen';
+          });
+        }
+      });
+
+      call.on('close', () => {
+        isOtherDeviceBroadcasting = false;
+        setListenerOfflineUI();
+      });
+
+      call.on('error', () => {
+        isOtherDeviceBroadcasting = false;
+        setListenerOfflineUI();
+      });
+    }
+
+    function onAudioPlaybackStarted() {
+      isListening = true;
+      acquireWakeLock();
+      btnPlayAudio.style.display = 'none';
+      btnStopListening.style.display = 'flex';
+      setupMediaSession();
+    }
+
+    btnPlayAudio.addEventListener('click', () => {
+      if (audioPlayer.srcObject) {
+        audioPlayer.play();
+        onAudioPlaybackStarted();
+      } else {
+        btnPlayAudioText.textContent = 'Connecting...';
+        attemptConnectToKhutbah();
+      }
+    });
+
+    btnStopListening.addEventListener('click', () => {
+      isListening = false;
+      audioPlayer.pause();
+      releaseWakeLock();
+      btnStopListening.style.display = 'none';
+      btnPlayAudio.style.display = 'flex';
+      btnPlayAudio.classList.remove('disabled');
+      btnPlayAudio.disabled = false;
+      btnPlayAudioText.textContent = 'Resume Listening';
+    });
+
+    function setListenerLiveUI() {
+      listenerStatusBadge.className = 'status-badge live';
+      listenerStatusText.textContent = 'Live Now';
+      listenerWaveBox.classList.add('is-live');
+      listenerMsg.textContent = 'Connected to Masjid live audio.';
+      btnPlayAudio.classList.remove('disabled');
+      btnPlayAudio.disabled = false;
+      btnPlayAudioText.textContent = 'Listen Live';
+    }
+
+    function setListenerOfflineUI() {
+      if (isListening) {
+        isListening = false;
+        releaseWakeLock();
+      }
+      listenerStatusBadge.className = 'status-badge offline';
+      listenerStatusText.textContent = 'Broadcast Offline';
+      listenerWaveBox.classList.remove('is-live');
+      listenerMsg.textContent = 'Waiting for the broadcast to begin...';
+      btnPlayAudio.classList.add('disabled');
+      btnPlayAudio.disabled = true;
+      btnPlayAudioText.textContent = 'Waiting for Stream';
+      btnPlayAudio.style.display = 'flex';
+      btnStopListening.style.display = 'none';
+      audioPlayer.srcObject = null;
+    }
+
+    function teardownListenerMode() {
+      clearInterval(pollTimer);
+      if (listenerPeer) {
+        listenerPeer.destroy();
+        listenerPeer = null;
+      }
+      setListenerOfflineUI();
+    }
+
+    function setupMediaSession() {
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: "Jumu'ah Khutbah Live",
+          artist: "Masjid Community",
+          album: "Live Audio Broadcast"
+        });
+      }
+    }
+
+    /* ==========================================================
+       6. BROADCASTER ENGINE
+       ========================================================== */
+    btnStartBroadcast.addEventListener('click', async () => {
+      btnStartBroadcast.disabled = true;
+      btnStartBroadcast.innerHTML = `<span>Starting broadcast...</span>`;
+      bcastBadge.className = 'status-badge loading';
+      bcastBadge.textContent = 'Connecting';
+
+      try {
+        localMicStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          },
+          video: false
+        });
+
+        isBroadcasting = true;
+        await acquireWakeLock();
+        startVUMeter(localMicStream);
+
+        if (broadcasterPeer) {
+          broadcasterPeer.destroy();
+          broadcasterPeer = null;
+        }
+
+        startBroadcasterPeerSession();
+
+      } catch (err) {
+        alert('Microphone Access Error: Please allow microphone access on your browser.');
+        resetBroadcasterButton();
+        console.error(err);
+      }
+    });
+
+    function startBroadcasterPeerSession() {
+      broadcasterPeer = new Peer(BROADCASTER_PEER_ID, peerConfig);
+
+      broadcasterPeer.on('open', () => {
+        bcastBadge.className = 'status-badge live';
+        bcastBadge.textContent = 'ON AIR';
+        btnStartBroadcast.style.display = 'none';
+        btnStopBroadcast.style.display = 'flex';
+        adminClashBanner.style.display = 'none';
+        resetBroadcasterButton();
+      });
+
+      broadcasterPeer.on('disconnected', () => {
+        if (isBroadcasting && broadcasterPeer && !broadcasterPeer.destroyed) {
+          broadcasterPeer.reconnect();
+        }
+      });
+
+      broadcasterPeer.on('call', (call) => {
+        call.answer(localMicStream);
+        clampAudioBitrate(call);
+
+        activeCalls.set(call.peer, call);
+        statListenerCount.textContent = activeCalls.size;
+
+        call.on('close', () => {
+          activeCalls.delete(call.peer);
+          statListenerCount.textContent = activeCalls.size;
+        });
+
+        call.on('error', () => {
+          activeCalls.delete(call.peer);
+          statListenerCount.textContent = activeCalls.size;
+        });
+      });
+
+      broadcasterPeer.on('error', (err) => {
+        if (err.type === 'network') {
+          if (broadcasterPeer && !broadcasterPeer.destroyed) broadcasterPeer.reconnect();
+        } else if (err.type === 'unavailable-id') {
+          // If another admin is already streaming, prevent takeover
+          alert('Collision Detected: Another Admin is currently broadcasting on this stream ID.');
+          stopBroadcasting();
+          isOtherDeviceBroadcasting = true;
+          checkAdminBroadcastClash();
+        } else {
+          console.error('Broadcaster Peer warning:', err);
+        }
+      });
+    }
+
+    function clampAudioBitrate(call) {
+      if (call.peerConnection) {
+        const pc = call.peerConnection;
+        pc.addEventListener('connectionstatechange', () => {
+          if (pc.connectionState === 'connected') {
+            const senders = pc.getSenders();
+            senders.forEach(sender => {
+              if (sender.track && sender.track.kind === 'audio') {
+                const params = sender.getParameters();
+                if (!params.encodings || params.encodings.length === 0) {
+                  params.encodings = [{}];
+                }
+                params.encodings[0].maxBitrate = 14000;
+                sender.setParameters(params).catch(() => {});
+              }
+            });
+          }
+        });
+      }
+    }
+
+    function resetBroadcasterButton() {
+      btnStartBroadcast.disabled = false;
+      btnStartBroadcast.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg> <span id="btnStartBroadcastText">Start Phone Broadcast</span>`;
+    }
+
+    btnStopBroadcast.addEventListener('click', stopBroadcasting);
+
+    function stopBroadcasting() {
+      isBroadcasting = false;
+      releaseWakeLock();
+
+      if (localMicStream) {
+        localMicStream.getTracks().forEach(t => t.stop());
+        localMicStream = null;
+      }
+
+      if (broadcasterPeer) {
+        broadcasterPeer.destroy();
+        broadcasterPeer = null;
+      }
+
+      if (audioContext) {
+        audioContext.close();
+        audioContext = null;
+      }
+
+      if (meterAnimFrame) {
+        cancelAnimationFrame(meterAnimFrame);
+      }
+
+      meterFill.style.width = '0%';
+      activeCalls.clear();
+      statListenerCount.textContent = '0';
+      bcastBadge.className = 'status-badge offline';
+      bcastBadge.textContent = 'Stopped';
+      btnStartBroadcast.style.display = 'flex';
+      btnStopBroadcast.style.display = 'none';
+      resetBroadcasterButton();
+    }
+
+    /* --- VU Meter Visualizer --- */
+    function startVUMeter(stream) {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioContext.createMediaStreamSource(stream);
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      function renderMeter() {
+        analyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          sum += dataArray[i];
+        }
+        const avg = sum / dataArray.length;
+        const percentage = Math.min(100, Math.round((avg / 128) * 100));
+        meterFill.style.width = percentage + '%';
+        meterAnimFrame = requestAnimationFrame(renderMeter);
+      }
+      renderMeter();
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initListenerMode();
+      resetIdleTimer();
+    });
+  </script>
+</body>
+</html>
