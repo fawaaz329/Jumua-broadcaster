@@ -1,6 +1,6 @@
 /**
  * Cloudflare Calls WebRTC SFU Backend (worker.js)
- * 2-Step Handshake Protocol
+ * Full Audio Renegotiation & Listener Counter
  */
 
 const CALLS_APP_ID = "906d403c90d6a6c46f4ca27e4df82811";
@@ -8,10 +8,12 @@ const CALLS_APP_SECRET = "dd2d91658878278404645abb2cfa3544c41c72f2b1a7d380287a9d
 const ADMIN_PASSWORD = "admin";
 const CALLS_API = `https://rtc.live.cloudflare.com/v1/apps/${CALLS_APP_ID}`;
 
+// Shared broadcast state
 let activeBroadcast = {
   sessionId: null,
   trackName: "masjid-audio",
-  isLive: false
+  isLive: false,
+  listeners: new Set()
 };
 
 const corsHeaders = {
@@ -35,12 +37,16 @@ export default {
 
     if (url.pathname.startsWith("/api/")) {
       try {
-        // Status endpoint
+        // 1. Status & Listener Count Check
         if (url.pathname === "/api/status") {
-          return json({ success: true, isLive: activeBroadcast.isLive });
+          return json({ 
+            success: true, 
+            isLive: activeBroadcast.isLive,
+            listenerCount: activeBroadcast.listeners.size 
+          });
         }
 
-        // Broadcaster Step 1: Initialize Session
+        // 2. Broadcaster Step 1: Initialize Session
         if (url.pathname === "/api/publish" && request.method === "POST") {
           const body = await request.json().catch(() => ({}));
           const { sdp, pass } = body;
@@ -79,7 +85,7 @@ export default {
           });
         }
 
-        // Broadcaster Step 2: Register Track (Called once PeerConnection is connected)
+        // 3. Broadcaster Step 2: Register Local Track
         if (url.pathname === "/api/register-track" && request.method === "POST") {
           const body = await request.json().catch(() => ({}));
           const { sessionId, mid } = body;
@@ -109,11 +115,12 @@ export default {
 
           activeBroadcast.sessionId = sessionId;
           activeBroadcast.isLive = true;
+          activeBroadcast.listeners.clear();
 
           return json({ success: true });
         }
 
-        // Listener Subscribe Step 1: Create Session
+        // 4. Listener Step 1: Create Session & Pull Audio Track
         if (url.pathname === "/api/subscribe" && request.method === "POST") {
           if (!activeBroadcast.isLive || !activeBroadcast.sessionId) {
             return json({ success: false, error: "Broadcast is currently offline" }, 404);
@@ -122,6 +129,7 @@ export default {
           const body = await request.json().catch(() => ({}));
           const { sdp } = body;
 
+          // Create listener session
           const sessionRes = await fetch(`${CALLS_API}/sessions/new`, {
             method: "POST",
             headers: { 
@@ -138,22 +146,10 @@ export default {
             return json({ success: false, error: "Listener Session Creation Failed" }, 502);
           }
 
-          return json({
-            success: true,
-            sessionId: sessionData.sessionId,
-            sdp: sessionData.sessionDescription?.sdp
-          });
-        }
+          const sessionId = sessionData.sessionId;
+          const answerSdp = sessionData.sessionDescription?.sdp;
 
-        // Listener Subscribe Step 2: Pull Audio Track
-        if (url.pathname === "/api/pull-track" && request.method === "POST") {
-          const body = await request.json().catch(() => ({}));
-          const { sessionId } = body;
-
-          if (!activeBroadcast.sessionId) {
-            return json({ success: false, error: "Broadcast is offline" }, 404);
-          }
-
+          // Pull audio track into this session
           const trackRes = await fetch(`${CALLS_API}/sessions/${sessionId}/tracks/new`, {
             method: "POST",
             headers: { 
@@ -167,23 +163,55 @@ export default {
 
           const trackData = await trackRes.json().catch(() => ({}));
           if (!trackRes.ok) {
-            return json({ success: false, error: "Listener Track Pull Failed" }, 502);
+            return json({ success: false, error: "Listener Track Subscription Failed" }, 502);
           }
+
+          // Register active listener
+          activeBroadcast.listeners.add(sessionId);
+
+          return json({
+            success: true,
+            sessionId,
+            sdp: answerSdp,
+            renegotiationOffer: trackData.sessionDescription // Cloudflare renegotiation offer containing the audio track
+          });
+        }
+
+        // 5. Listener Renegotiation Answer (Completes the audio link)
+        if (url.pathname === "/api/renegotiate-answer" && request.method === "POST") {
+          const body = await request.json().catch(() => ({}));
+          const { sessionId, sdp } = body;
+
+          await fetch(`${CALLS_API}/sessions/${sessionId}/renegotiate`, {
+            method: "PUT",
+            headers: { "Authorization": `Bearer ${CALLS_APP_SECRET}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sessionDescription: { type: "answer", sdp }
+            })
+          });
 
           return json({ success: true });
         }
 
-        // Stop Broadcast
+        // 6. Listener Disconnect (Decrements count)
+        if (url.pathname === "/api/leave" && request.method === "POST") {
+          const body = await request.json().catch(() => ({}));
+          if (body.sessionId) activeBroadcast.listeners.delete(body.sessionId);
+          return json({ success: true });
+        }
+
+        // 7. Broadcaster Stop
         if (url.pathname === "/api/stop" && request.method === "POST") {
           activeBroadcast.isLive = false;
           activeBroadcast.sessionId = null;
+          activeBroadcast.listeners.clear();
           return json({ success: true });
         }
 
         return json({ success: false, error: "API route not found" }, 404);
 
       } catch (err) {
-        return json({ success: false, error: err.message || "Internal Server Error" }, 500);
+        return json({ success: false, error: err.message || "Server Error" }, 500);
       }
     }
 
