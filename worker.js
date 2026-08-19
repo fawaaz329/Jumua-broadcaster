@@ -1,6 +1,6 @@
 /**
- * Cloudflare Calls WebRTC SFU Backend (worker.js)
- * Includes Admin Force-Reset & Session Recovery
+ * Cloudflare Calls WebRTC SFU Backend (_worker.js)
+ * Fast 1-Second Response, Real-Time Listener Counter & Force-Reset
  */
 
 const CALLS_APP_ID = "906d403c90d6a6c46f4ca27e4df82811";
@@ -8,7 +8,6 @@ const CALLS_APP_SECRET = "dd2d91658878278404645abb2cfa3544c41c72f2b1a7d380287a9d
 const ADMIN_PASSWORD = "admin";
 const CALLS_API = `https://rtc.live.cloudflare.com/v1/apps/${CALLS_APP_ID}`;
 
-// Shared broadcast state in Cloudflare memory
 let activeBroadcast = {
   sessionId: null,
   trackName: "masjid-audio",
@@ -38,7 +37,7 @@ export default {
 
     if (url.pathname.startsWith("/api/")) {
       try {
-        // 1. Status Check & Listener Count
+        // 1. Instant Status Check & Live Listener Count
         if (url.pathname === "/api/status") {
           return json({ 
             success: true, 
@@ -48,20 +47,19 @@ export default {
           });
         }
 
-        // 2. Force Reset / Takeover Endpoint
+        // 2. Force Reset / Unlock Stream
         if (url.pathname === "/api/force-reset" && request.method === "POST") {
           const body = await request.json().catch(() => ({}));
           if (body.pass !== ADMIN_PASSWORD) {
             return json({ success: false, error: "Unauthorized: Invalid Password" }, 401);
           }
 
-          // Reset broadcast state
           activeBroadcast.isLive = false;
           activeBroadcast.sessionId = null;
           activeBroadcast.broadcasterToken = null;
           activeBroadcast.listeners.clear();
 
-          return json({ success: true, message: "Broadcast state reset successfully." });
+          return json({ success: true, message: "Stream reset successfully." });
         }
 
         // 3. Broadcaster Publish (Step 1: Session Init)
@@ -77,7 +75,6 @@ export default {
             return json({ success: false, error: "Missing SDP offer" }, 400);
           }
 
-          // If a broadcast is live, only allow if it's the SAME device reclaiming or if forced
           if (activeBroadcast.isLive && activeBroadcast.broadcasterToken && activeBroadcast.broadcasterToken !== adminDeviceToken) {
             return json({
               success: false,
