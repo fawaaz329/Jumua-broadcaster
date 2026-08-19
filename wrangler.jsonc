@@ -1,0 +1,8 @@
+{
+  "name": "jumua-broadcaster",
+  "compatibility_date": "2024-09-01",
+  "main": "_worker.js",
+  "assets": {
+    "directory": "."
+  }
+}
