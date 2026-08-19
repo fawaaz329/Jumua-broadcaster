@@ -1,6 +1,6 @@
 /**
  * Cloudflare Calls WebRTC SFU Backend (_worker.js)
- * Fully CORS-enabled, HTTPS-locked, with Upstream Error Handling
+ * Diagnostic Edition
  */
 
 const CALLS_APP_ID = "906d403c90d6a6c46f4ca27e4df82811";
@@ -14,7 +14,6 @@ let activeBroadcast = {
   isLive: false
 };
 
-// Universal CORS headers applied to EVERY response
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -28,7 +27,6 @@ function json(data, status = 200) {
 
 export default {
   async fetch(request, env) {
-    // 1. Handle CORS Preflight immediately
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: corsHeaders });
     }
@@ -36,20 +34,31 @@ export default {
     const url = new URL(request.url);
 
     try {
-      // 2. Status Check: /api/status
+      // 1. Diagnostic Health Check
       if (url.pathname === "/api/status" || url.pathname.endsWith("/status")) {
-        return json({ success: true, isLive: activeBroadcast.isLive });
-      }
-
-      // 3. Broadcaster Publish: /api/publish
-      if ((url.pathname === "/api/publish" || url.pathname.endsWith("/publish")) && request.method === "POST") {
-        let body;
+        // Test Cloudflare Calls authentication in real-time
+        let callsStatus = "Untested";
         try {
-          body = await request.json();
-        } catch {
-          return json({ success: false, error: "Invalid JSON body" }, 400);
+          const testRes = await fetch(`${CALLS_API}/sessions/new`, {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${CALLS_APP_SECRET}`, "Content-Type": "application/json" }
+          });
+          callsStatus = testRes.status === 200 || testRes.status === 201 ? "Connected (OK)" : `Calls Auth Error (HTTP ${testRes.status})`;
+        } catch (e) {
+          callsStatus = "Calls Network Error: " + e.message;
         }
 
+        return json({
+          success: true,
+          worker: "Active & Running",
+          isLive: activeBroadcast.isLive,
+          callsApi: callsStatus
+        });
+      }
+
+      // 2. Broadcaster Publish
+      if ((url.pathname === "/api/publish" || url.pathname.endsWith("/publish")) && request.method === "POST") {
+        const body = await request.json().catch(() => ({}));
         const { sdp, pass, mid } = body;
 
         if (pass !== ADMIN_PASSWORD) {
@@ -57,39 +66,29 @@ export default {
         }
 
         if (!sdp) {
-          return json({ success: false, error: "Missing SDP offer" }, 400);
+          return json({ success: false, error: "Missing SDP offer from phone" }, 400);
         }
 
-        // Create new session in Cloudflare Calls
         const sessionRes = await fetch(`${CALLS_API}/sessions/new`, {
           method: "POST",
-          headers: { 
-            "Authorization": `Bearer ${CALLS_APP_SECRET}`, 
-            "Content-Type": "application/json" 
-          },
-          body: JSON.stringify({
-            sessionDescription: { type: "offer", sdp }
-          })
+          headers: { "Authorization": `Bearer ${CALLS_APP_SECRET}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionDescription: { type: "offer", sdp } })
         });
 
         const sessionData = await sessionRes.json().catch(() => ({}));
         if (!sessionRes.ok || !sessionData.sessionId) {
           return json({ 
             success: false, 
-            error: "Cloudflare Calls Session Error: " + (sessionData.errorDescription || sessionData.message || JSON.stringify(sessionData)) 
+            error: "Calls Session Failed: " + (sessionData.errorDescription || sessionData.message || JSON.stringify(sessionData)) 
           }, 502);
         }
 
         const sessionId = sessionData.sessionId;
         const answerSdp = sessionData.sessionDescription?.sdp;
 
-        // Register audio track
         const trackRes = await fetch(`${CALLS_API}/sessions/${sessionId}/tracks/new`, {
           method: "POST",
-          headers: { 
-            "Authorization": `Bearer ${CALLS_APP_SECRET}`, 
-            "Content-Type": "application/json" 
-          },
+          headers: { "Authorization": `Bearer ${CALLS_APP_SECRET}`, "Content-Type": "application/json" },
           body: JSON.stringify({
             tracks: [{ location: "local", mid: mid || "0", trackName: activeBroadcast.trackName }]
           })
@@ -99,7 +98,7 @@ export default {
         if (!trackRes.ok) {
           return json({ 
             success: false, 
-            error: "Cloudflare Calls Track Error: " + (trackData.errorDescription || JSON.stringify(trackData)) 
+            error: "Calls Track Failed: " + (trackData.errorDescription || JSON.stringify(trackData)) 
           }, 502);
         }
 
@@ -113,35 +112,24 @@ export default {
         });
       }
 
-      // 4. Listener Subscribe: /api/subscribe
+      // 3. Listener Subscribe
       if ((url.pathname === "/api/subscribe" || url.pathname.endsWith("/subscribe")) && request.method === "POST") {
         if (!activeBroadcast.isLive || !activeBroadcast.sessionId) {
-          return json({ success: false, error: "Broadcast Offline" }, 404);
+          return json({ success: false, error: "Broadcast is currently offline" }, 404);
         }
 
-        let body;
-        try {
-          body = await request.json();
-        } catch {
-          return json({ success: false, error: "Invalid JSON body" }, 400);
-        }
-
+        const body = await request.json().catch(() => ({}));
         const { sdp } = body;
 
         const sessionRes = await fetch(`${CALLS_API}/sessions/new`, {
           method: "POST",
-          headers: { 
-            "Authorization": `Bearer ${CALLS_APP_SECRET}`, 
-            "Content-Type": "application/json" 
-          },
-          body: JSON.stringify({
-            sessionDescription: { type: "offer", sdp }
-          })
+          headers: { "Authorization": `Bearer ${CALLS_APP_SECRET}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionDescription: { type: "offer", sdp } })
         });
 
         const sessionData = await sessionRes.json().catch(() => ({}));
         if (!sessionRes.ok || !sessionData.sessionId) {
-          return json({ success: false, error: "Listener Session Error" }, 502);
+          return json({ success: false, error: "Listener Session Creation Failed" }, 502);
         }
 
         const sessionId = sessionData.sessionId;
@@ -149,10 +137,7 @@ export default {
 
         const trackRes = await fetch(`${CALLS_API}/sessions/${sessionId}/tracks/new`, {
           method: "POST",
-          headers: { 
-            "Authorization": `Bearer ${CALLS_APP_SECRET}`, 
-            "Content-Type": "application/json" 
-          },
+          headers: { "Authorization": `Bearer ${CALLS_APP_SECRET}`, "Content-Type": "application/json" },
           body: JSON.stringify({
             tracks: [{ location: "remote", sessionId: activeBroadcast.sessionId, trackName: activeBroadcast.trackName }]
           })
@@ -160,7 +145,7 @@ export default {
 
         const trackData = await trackRes.json().catch(() => ({}));
         if (!trackRes.ok) {
-          return json({ success: false, error: "Listener Track Pull Error" }, 502);
+          return json({ success: false, error: "Listener Track Subscription Failed" }, 502);
         }
 
         return json({
@@ -170,19 +155,19 @@ export default {
         });
       }
 
-      // 5. Broadcaster Stop: /api/stop
+      // 4. Stop
       if ((url.pathname === "/api/stop" || url.pathname.endsWith("/stop")) && request.method === "POST") {
         activeBroadcast.isLive = false;
         activeBroadcast.sessionId = null;
         return json({ success: true });
       }
 
-      // Static assets fallback
+      // Static assets
       if (env && env.ASSETS) {
         return env.ASSETS.fetch(request);
       }
 
-      return json({ success: false, error: "Route Not Found" }, 404);
+      return json({ success: false, error: `Route not found: ${url.pathname}` }, 404);
 
     } catch (err) {
       return json({ success: false, error: err.message || "Internal Server Error" }, 500);
