@@ -1,21 +1,13 @@
 /**
- * Cloudflare Calls WebRTC SFU Backend (_worker.js)
- * Synced across all Cloudflare Edge Servers via JUMUA_KV
+ * Cloudflare Calls WebRTC SFU Backend (worker.js)
+ * Fully Connected JUMUA_KV Database Sync
  */
 
 const CALLS_APP_ID = "906d403c90d6a6c46f4ca27e4df82811";
 const CALLS_APP_SECRET = "dd2d91658878278404645abb2cfa3544c41c72f2b1a7d380287a9d1beefdb0a6";
 const ADMIN_PASSWORD = "admin";
 const CALLS_API = `https://rtc.live.cloudflare.com/v1/apps/${CALLS_APP_ID}`;
-const KV_KEY = "masjid_live_broadcast_state";
-
-let memoryFallback = {
-  sessionId: null,
-  trackName: "masjid-audio",
-  isLive: false,
-  broadcasterToken: null,
-  listenerCount: 0
-};
+const KV_KEY = "active_masjid_stream";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -28,32 +20,27 @@ function json(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders });
 }
 
-// Global KV reader (ensures all edge servers see the live broadcast)
-async function getBroadcastState(env) {
+// Global State Reader
+async function getBroadcast(env) {
   if (env && env.JUMUA_KV) {
     try {
       const raw = await env.JUMUA_KV.get(KV_KEY);
       if (raw) return JSON.parse(raw);
     } catch (e) {}
   }
-  return memoryFallback.isLive ? memoryFallback : null;
+  return null;
 }
 
-// Global KV writer
-async function setBroadcastState(env, state) {
+// Global State Writer
+async function setBroadcast(env, data) {
   if (env && env.JUMUA_KV) {
     try {
-      if (state) {
-        await env.JUMUA_KV.put(KV_KEY, JSON.stringify(state), { expirationTtl: 43200 }); // 12hr TTL
+      if (data) {
+        await env.JUMUA_KV.put(KV_KEY, JSON.stringify(data), { expirationTtl: 43200 });
       } else {
         await env.JUMUA_KV.delete(KV_KEY);
       }
     } catch (e) {}
-  }
-  if (state) {
-    memoryFallback = state;
-  } else {
-    memoryFallback = { sessionId: null, trackName: "masjid-audio", isLive: false, broadcasterToken: null, listenerCount: 0 };
   }
 }
 
@@ -67,32 +54,31 @@ export default {
 
     if (url.pathname.startsWith("/api/")) {
       try {
-        // 1. Status Check & Live Listener Count
+        // 1. Status Check
         if (url.pathname === "/api/status") {
-          const state = await getBroadcastState(env);
+          const current = await getBroadcast(env);
           return json({ 
             success: true, 
-            isLive: !!(state && state.isLive),
-            broadcasterToken: state ? state.broadcasterToken : null,
-            listenerCount: state ? (state.listenerCount || 0) : 0
+            isLive: !!(current && current.isLive),
+            sessionId: current ? current.sessionId : null,
+            listenerCount: current ? (current.listenerCount || 0) : 0
           });
         }
 
-        // 2. Force Reset / Unlock Stream
+        // 2. Force Reset
         if (url.pathname === "/api/force-reset" && request.method === "POST") {
           const body = await request.json().catch(() => ({}));
           if (body.pass !== ADMIN_PASSWORD) {
-            return json({ success: false, error: "Unauthorized: Invalid Password" }, 401);
+            return json({ success: false, error: "Unauthorized" }, 401);
           }
-
-          await setBroadcastState(env, null);
-          return json({ success: true, message: "Stream reset successfully." });
+          await setBroadcast(env, null);
+          return json({ success: true });
         }
 
-        // 3. Broadcaster Step 1: Initialize Session
+        // 3. Broadcaster Start
         if (url.pathname === "/api/publish" && request.method === "POST") {
           const body = await request.json().catch(() => ({}));
-          const { sdp, pass, adminDeviceToken } = body;
+          const { sdp, pass } = body;
 
           if (pass !== ADMIN_PASSWORD) {
             return json({ success: false, error: "Unauthorized: Invalid Admin Password" }, 401);
@@ -102,32 +88,18 @@ export default {
             return json({ success: false, error: "Missing SDP offer" }, 400);
           }
 
-          const currentState = await getBroadcastState(env);
-          if (currentState && currentState.isLive && currentState.broadcasterToken && currentState.broadcasterToken !== adminDeviceToken) {
-            return json({
-              success: false,
-              error: "Stream Occupied: Another Admin is currently broadcasting.",
-              isOccupied: true
-            }, 409);
-          }
-
           const sessionRes = await fetch(`${CALLS_API}/sessions/new`, {
             method: "POST",
             headers: { 
               "Authorization": `Bearer ${CALLS_APP_SECRET}`, 
               "Content-Type": "application/json" 
             },
-            body: JSON.stringify({
-              sessionDescription: { type: "offer", sdp }
-            })
+            body: JSON.stringify({ sessionDescription: { type: "offer", sdp } })
           });
 
           const sessionData = await sessionRes.json().catch(() => ({}));
           if (!sessionRes.ok || !sessionData.sessionId) {
-            return json({ 
-              success: false, 
-              error: "Calls Session Failed: " + (sessionData.errorDescription || JSON.stringify(sessionData)) 
-            }, 502);
+            return json({ success: false, error: "Calls Session Failed" }, 502);
           }
 
           return json({
@@ -137,14 +109,12 @@ export default {
           });
         }
 
-        // 4. Broadcaster Step 2: Register Local Track & Save to Global KV
+        // 4. Broadcaster Register Track & Publish to Global Database
         if (url.pathname === "/api/register-track" && request.method === "POST") {
           const body = await request.json().catch(() => ({}));
-          const { sessionId, mid, adminDeviceToken } = body;
+          const { sessionId, mid } = body;
 
-          if (!sessionId) {
-            return json({ success: false, error: "Missing sessionId" }, 400);
-          }
+          if (!sessionId) return json({ success: false, error: "Missing sessionId" }, 400);
 
           const trackRes = await fetch(`${CALLS_API}/sessions/${sessionId}/tracks/new`, {
             method: "POST",
@@ -159,18 +129,14 @@ export default {
 
           const trackData = await trackRes.json().catch(() => ({}));
           if (!trackRes.ok) {
-            return json({ 
-              success: false, 
-              error: "Track Register Failed: " + (trackData.errorDescription || JSON.stringify(trackData)) 
-            }, 502);
+            return json({ success: false, error: "Track Register Failed" }, 502);
           }
 
-          // Save active broadcast state globally across all Cloudflare edge servers
-          await setBroadcastState(env, {
+          // Write live broadcast state to Cloudflare Global KV database
+          await setBroadcast(env, {
             sessionId: sessionId,
             trackName: "masjid-audio",
             isLive: true,
-            broadcasterToken: adminDeviceToken,
             listenerCount: 0,
             startedAt: Date.now()
           });
@@ -178,10 +144,10 @@ export default {
           return json({ success: true });
         }
 
-        // 5. Listener Step 1: Create Session
+        // 5. Listener Subscribe Step 1: Create Session
         if (url.pathname === "/api/subscribe" && request.method === "POST") {
-          const state = await getBroadcastState(env);
-          if (!state || !state.isLive || !state.sessionId) {
+          const current = await getBroadcast(env);
+          if (!current || !current.isLive || !current.sessionId) {
             return json({ success: false, error: "Broadcast is currently offline" }, 404);
           }
 
@@ -194,9 +160,7 @@ export default {
               "Authorization": `Bearer ${CALLS_APP_SECRET}`, 
               "Content-Type": "application/json" 
             },
-            body: JSON.stringify({
-              sessionDescription: { type: "offer", sdp }
-            })
+            body: JSON.stringify({ sessionDescription: { type: "offer", sdp } })
           });
 
           const sessionData = await sessionRes.json().catch(() => ({}));
@@ -211,10 +175,10 @@ export default {
           });
         }
 
-        // 6. Listener Step 2: Pull Audio Track from Broadcaster Session
+        // 6. Listener Subscribe Step 2: Pull Audio Track from Broadcaster
         if (url.pathname === "/api/pull-track" && request.method === "POST") {
-          const state = await getBroadcastState(env);
-          if (!state || !state.sessionId) {
+          const current = await getBroadcast(env);
+          if (!current || !current.sessionId) {
             return json({ success: false, error: "Broadcast is offline" }, 404);
           }
 
@@ -228,21 +192,18 @@ export default {
               "Content-Type": "application/json" 
             },
             body: JSON.stringify({
-              tracks: [{ location: "remote", sessionId: state.sessionId, trackName: state.trackName || "masjid-audio" }]
+              tracks: [{ location: "remote", sessionId: current.sessionId, trackName: "masjid-audio" }]
             })
           });
 
           const trackData = await trackRes.json().catch(() => ({}));
           if (!trackRes.ok || !trackData.sessionDescription) {
-            return json({ 
-              success: false, 
-              error: "Listener Track Pull Failed: " + (trackData.errorDescription || JSON.stringify(trackData)) 
-            }, 502);
+            return json({ success: false, error: "Listener Track Pull Failed" }, 502);
           }
 
-          // Increment listener count in KV
-          state.listenerCount = (state.listenerCount || 0) + 1;
-          await setBroadcastState(env, state);
+          // Increment listener count
+          current.listenerCount = (current.listenerCount || 0) + 1;
+          await setBroadcast(env, current);
 
           return json({
             success: true,
@@ -250,7 +211,7 @@ export default {
           });
         }
 
-        // 7. Listener Step 3: Complete Renegotiation
+        // 7. Listener Complete Audio Connection
         if (url.pathname === "/api/renegotiate-answer" && request.method === "POST") {
           const body = await request.json().catch(() => ({}));
           const { sessionId, sdp } = body;
@@ -261,27 +222,25 @@ export default {
               "Authorization": `Bearer ${CALLS_APP_SECRET}`, 
               "Content-Type": "application/json" 
             },
-            body: JSON.stringify({
-              sessionDescription: { type: "answer", sdp }
-            })
+            body: JSON.stringify({ sessionDescription: { type: "answer", sdp } })
           });
 
           return json({ success: true });
         }
 
-        // 8. Listener Leave: Decrement count
+        // 8. Listener Leave
         if (url.pathname === "/api/leave" && request.method === "POST") {
-          const state = await getBroadcastState(env);
-          if (state && state.listenerCount > 0) {
-            state.listenerCount -= 1;
-            await setBroadcastState(env, state);
+          const current = await getBroadcast(env);
+          if (current && current.listenerCount > 0) {
+            current.listenerCount -= 1;
+            await setBroadcast(env, current);
           }
           return json({ success: true });
         }
 
-        // 9. Broadcaster Stop
+        // 9. Stop Broadcast
         if (url.pathname === "/api/stop" && request.method === "POST") {
-          await setBroadcastState(env, null);
+          await setBroadcast(env, null);
           return json({ success: true });
         }
 
