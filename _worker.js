@@ -8,7 +8,6 @@ const CALLS_APP_SECRET = "dd2d91658878278404645abb2cfa3544c41c72f2b1a7d380287a9d
 const ADMIN_PASSWORD = "admin";
 const CALLS_API = `https://rtc.live.cloudflare.com/v1/apps/${CALLS_APP_ID}`;
 
-// Shared memory for active broadcast track
 let activeBroadcast = {
   sessionId: null,
   trackName: "masjid-audio",
@@ -34,7 +33,7 @@ export default {
 
     const url = new URL(request.url);
 
-    // Only intercept /api/* routes; pass everything else to the static website
+    // API Routing
     if (url.pathname.startsWith("/api/")) {
       try {
         // 1. Status Check: /api/status
@@ -52,10 +51,10 @@ export default {
           }
 
           if (!sdp) {
-            return json({ success: false, error: "Missing SDP offer from phone" }, 400);
+            return json({ success: false, error: "Missing SDP offer" }, 400);
           }
 
-          // Create new session in Cloudflare Calls with SDP offer
+          // Create session in Cloudflare Calls with SDP offer
           const sessionRes = await fetch(`${CALLS_API}/sessions/new`, {
             method: "POST",
             headers: { 
@@ -78,7 +77,7 @@ export default {
           const sessionId = sessionData.sessionId;
           const answerSdp = sessionData.sessionDescription?.sdp;
 
-          // Register local audio track with Cloudflare Calls
+          // Register audio track
           const trackRes = await fetch(`${CALLS_API}/sessions/${sessionId}/tracks/new`, {
             method: "POST",
             headers: { 
@@ -137,7 +136,7 @@ export default {
           const sessionId = sessionData.sessionId;
           const answerSdp = sessionData.sessionDescription?.sdp;
 
-          // Pull audio track from broadcaster's active session
+          // Pull audio track from broadcaster session
           const trackRes = await fetch(`${CALLS_API}/sessions/${sessionId}/tracks/new`, {
             method: "POST",
             headers: { 
@@ -175,7 +174,7 @@ export default {
       }
     }
 
-    // Serve the static website files (index.html)
+    // Serve static files (index.html)
     if (env && env.ASSETS) {
       return env.ASSETS.fetch(request);
     }
