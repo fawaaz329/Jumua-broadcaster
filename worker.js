@@ -1,5 +1,5 @@
 /**
- * Cloudflare Calls WebRTC SFU Backend (_worker.js)
+ * Cloudflare Calls WebRTC SFU Backend (worker.js)
  * 1,000 GB Free Egress / Zero Minute Limits
  */
 
@@ -33,7 +33,7 @@ export default {
 
     const url = new URL(request.url);
 
-    // API Routing
+    // Intercept all API routes before static asset handling
     if (url.pathname.startsWith("/api/")) {
       try {
         // 1. Status Check: /api/status
@@ -51,7 +51,7 @@ export default {
           }
 
           if (!sdp) {
-            return json({ success: false, error: "Missing SDP offer" }, 400);
+            return json({ success: false, error: "Missing SDP offer from phone" }, 400);
           }
 
           // Create session in Cloudflare Calls with SDP offer
@@ -77,7 +77,7 @@ export default {
           const sessionId = sessionData.sessionId;
           const answerSdp = sessionData.sessionDescription?.sdp;
 
-          // Register audio track
+          // Register local audio track
           const trackRes = await fetch(`${CALLS_API}/sessions/${sessionId}/tracks/new`, {
             method: "POST",
             headers: { 
@@ -116,7 +116,6 @@ export default {
           const body = await request.json().catch(() => ({}));
           const { sdp } = body;
 
-          // Create listener session with SDP offer
           const sessionRes = await fetch(`${CALLS_API}/sessions/new`, {
             method: "POST",
             headers: { 
@@ -136,7 +135,6 @@ export default {
           const sessionId = sessionData.sessionId;
           const answerSdp = sessionData.sessionDescription?.sdp;
 
-          // Pull audio track from broadcaster session
           const trackRes = await fetch(`${CALLS_API}/sessions/${sessionId}/tracks/new`, {
             method: "POST",
             headers: { 
