@@ -8,16 +8,18 @@ const CALLS_APP_SECRET = "dd2d91658878278404645abb2cfa3544c41c72f2b1a7d380287a9d
 const ADMIN_PASSWORD = "admin";
 const CALLS_API = `https://rtc.live.cloudflare.com/v1/apps/${CALLS_APP_ID}`;
 
+// In-memory broadcast state
 let activeBroadcast = {
   sessionId: null,
   trackName: "masjid-audio",
   isLive: false
 };
 
+// Global CORS headers applied to every response
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
   "Content-Type": "application/json"
 };
 
@@ -27,21 +29,22 @@ function json(data, status = 200) {
 
 export default {
   async fetch(request, env) {
+    // 1. Universal CORS Preflight Handling
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: corsHeaders });
     }
 
     const url = new URL(request.url);
 
-    // Intercept all API routes before static asset handling
+    // 2. Intercept API routes
     if (url.pathname.startsWith("/api/")) {
       try {
-        // 1. Status Check: /api/status
+        // Status endpoint: GET /api/status
         if (url.pathname === "/api/status") {
           return json({ success: true, isLive: activeBroadcast.isLive });
         }
 
-        // 2. Broadcaster Publish: /api/publish
+        // Broadcaster Publish endpoint: POST /api/publish
         if (url.pathname === "/api/publish" && request.method === "POST") {
           const body = await request.json().catch(() => ({}));
           const { sdp, pass, mid } = body;
@@ -54,7 +57,7 @@ export default {
             return json({ success: false, error: "Missing SDP offer from phone" }, 400);
           }
 
-          // Create session in Cloudflare Calls with SDP offer
+          // Create new session in Cloudflare Calls with SDP offer
           const sessionRes = await fetch(`${CALLS_API}/sessions/new`, {
             method: "POST",
             headers: { 
@@ -77,7 +80,7 @@ export default {
           const sessionId = sessionData.sessionId;
           const answerSdp = sessionData.sessionDescription?.sdp;
 
-          // Register local audio track
+          // Register local audio track with Cloudflare Calls
           const trackRes = await fetch(`${CALLS_API}/sessions/${sessionId}/tracks/new`, {
             method: "POST",
             headers: { 
@@ -107,7 +110,7 @@ export default {
           });
         }
 
-        // 3. Listener Subscribe: /api/subscribe
+        // Listener Subscribe endpoint: POST /api/subscribe
         if (url.pathname === "/api/subscribe" && request.method === "POST") {
           if (!activeBroadcast.isLive || !activeBroadcast.sessionId) {
             return json({ success: false, error: "Broadcast is currently offline" }, 404);
@@ -116,6 +119,7 @@ export default {
           const body = await request.json().catch(() => ({}));
           const { sdp } = body;
 
+          // Create listener session with SDP offer
           const sessionRes = await fetch(`${CALLS_API}/sessions/new`, {
             method: "POST",
             headers: { 
@@ -135,6 +139,7 @@ export default {
           const sessionId = sessionData.sessionId;
           const answerSdp = sessionData.sessionDescription?.sdp;
 
+          // Pull audio track from broadcaster session
           const trackRes = await fetch(`${CALLS_API}/sessions/${sessionId}/tracks/new`, {
             method: "POST",
             headers: { 
@@ -158,7 +163,7 @@ export default {
           });
         }
 
-        // 4. Broadcaster Stop: /api/stop
+        // Broadcaster Stop endpoint: POST /api/stop
         if (url.pathname === "/api/stop" && request.method === "POST") {
           activeBroadcast.isLive = false;
           activeBroadcast.sessionId = null;
@@ -172,7 +177,7 @@ export default {
       }
     }
 
-    // Serve static files (index.html)
+    // 3. Serve static files (index.html) if request is not an /api/ route
     if (env && env.ASSETS) {
       return env.ASSETS.fetch(request);
     }
