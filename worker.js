@@ -1,11 +1,10 @@
 /**
  * Cloudflare Calls WebRTC SFU Backend (_worker.js)
- * Hardened for High-Traffic Spikes (Edge Micro-Caching & Global KV Sync)
+ * Secure Password Check via Cloudflare Environment Secrets
  */
 
 const CALLS_APP_ID = "906d403c90d6a6c46f4ca27e4df82811";
 const CALLS_APP_SECRET = "dd2d91658878278404645abb2cfa3544c41c72f2b1a7d380287a9d1beefdb0a6";
-const ADMIN_PASSWORD = "admin";
 const CALLS_API = `https://rtc.live.cloudflare.com/v1/apps/${CALLS_APP_ID}`;
 const KV_KEY = "active_masjid_stream";
 
@@ -55,9 +54,12 @@ export default {
 
     const url = new URL(request.url);
 
+    // SECURE: Reads password from Cloudflare dashboard secret (defaults to 'admin' if not set)
+    const activeAdminPassword = env.ADMIN_PASSWORD || "admin";
+
     if (url.pathname.startsWith("/api/")) {
       try {
-        // 1. Status Check (Protected by Edge Micro-Caching for 2,000+ Crowd Spikes)
+        // 1. Status Check (Edge Micro-Cached)
         if (url.pathname === "/api/status") {
           const current = await getBroadcast(env);
           return json({ 
@@ -67,7 +69,6 @@ export default {
             listenerCount: current ? (current.listenerCount || 0) : 0,
             broadcasterToken: current ? current.broadcasterToken : null
           }, 200, {
-            // Edge Cache Shield: Cloudflare answers thousands of requests in 5ms from local edge RAM
             "Cache-Control": "public, max-age=2, s-maxage=2, stale-while-revalidate=4"
           });
         }
@@ -75,7 +76,7 @@ export default {
         // 2. Force Reset / Unlock Stream
         if (url.pathname === "/api/force-reset" && request.method === "POST") {
           const body = await request.json().catch(() => ({}));
-          if (body.pass !== ADMIN_PASSWORD) {
+          if (body.pass !== activeAdminPassword) {
             return json({ success: false, error: "Unauthorized" }, 401);
           }
           await setBroadcast(env, null);
@@ -87,7 +88,8 @@ export default {
           const body = await request.json().catch(() => ({}));
           const { sdp, pass, adminDeviceToken } = body;
 
-          if (pass !== ADMIN_PASSWORD) {
+          // Secure verification against Cloudflare Secret
+          if (pass !== activeAdminPassword) {
             return json({ success: false, error: "Unauthorized: Invalid Admin Password" }, 401);
           }
 
@@ -160,7 +162,7 @@ export default {
           return json({ success: true });
         }
 
-        // 5. Listener Subscribe Step 1: Create Session
+        // 5. Listener Subscribe Step 1
         if (url.pathname === "/api/subscribe" && request.method === "POST") {
           const current = await getBroadcast(env);
           if (!current || !current.isLive || !current.sessionId) {
@@ -217,7 +219,6 @@ export default {
             return json({ success: false, error: "Listener Track Pull Failed" }, 502);
           }
 
-          // Increment listener count in KV
           current.listenerCount = (current.listenerCount || 0) + 1;
           await setBroadcast(env, current);
 
