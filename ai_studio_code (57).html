@@ -1,0 +1,1138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Masjid Live Audio Broadcast</title>
+
+  <style>
+    :root {
+      --primary: #0b5e39;
+      --primary-dark: #073b24;
+      --primary-light: #e6f4ea;
+      --accent: #c99738;
+      --bg: #f4f6f8;
+      --card: #ffffff;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --danger: #dc2626;
+      --live-red: #ef4444;
+      --border: #e2e8f0;
+      --radius: 16px;
+      --shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.06), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 440px;
+      margin: auto;
+    }
+
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .masjid-brand {
+      font-weight: 700;
+      font-size: 1.1rem;
+      color: var(--primary-dark);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-switch-mode {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 6px 12px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      border-radius: 20px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+    }
+
+    .btn-switch-mode:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .bismillah {
+      font-size: 1.1rem;
+      color: var(--accent);
+      margin-bottom: 6px;
+      font-weight: 500;
+    }
+
+    .title {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--primary-dark);
+    }
+
+    .subtitle {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 28px 20px;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      text-align: center;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 20px;
+    }
+
+    .status-badge.offline { background-color: #f1f5f9; color: var(--text-muted); }
+    .status-badge.live { background-color: #fee2e2; color: var(--live-red); box-shadow: 0 0 10px rgba(239, 68, 68, 0.2); }
+    .status-badge.locked { background-color: #fef3c7; color: #92400e; }
+    .status-badge.loading { background-color: #fef3c7; color: #92400e; }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: currentColor;
+    }
+
+    .status-badge.live .dot {
+      animation: pulse-dot 1.5s infinite;
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.3; transform: scale(0.8); }
+    }
+
+    .wave-box {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 5px;
+      height: 50px;
+      margin-bottom: 20px;
+    }
+
+    .wave-bar {
+      width: 4px;
+      height: 6px;
+      background-color: var(--border);
+      border-radius: 3px;
+      transition: all 0.2s ease;
+    }
+
+    .is-live .wave-bar {
+      background-color: var(--primary);
+      animation: wave-anim 1.2s infinite ease-in-out;
+    }
+
+    .is-live .wave-bar:nth-child(1) { animation-delay: 0.0s; }
+    .is-live .wave-bar:nth-child(2) { animation-delay: 0.15s; }
+    .is-live .wave-bar:nth-child(3) { animation-delay: 0.3s; }
+    .is-live .wave-bar:nth-child(4) { animation-delay: 0.45s; }
+    .is-live .wave-bar:nth-child(5) { animation-delay: 0.3s; }
+    .is-live .wave-bar:nth-child(6) { animation-delay: 0.15s; }
+    .is-live .wave-bar:nth-child(7) { animation-delay: 0.0s; }
+
+    @keyframes wave-anim {
+      0%, 100% { height: 6px; }
+      50% { height: 36px; }
+    }
+
+    .wakelock-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-bottom: 18px;
+    }
+
+    .wakelock-pill.active {
+      background: #f0fdf4;
+      border-color: #bbf7d0;
+      color: #166534;
+      font-weight: 600;
+    }
+
+    .lock-banner {
+      display: none;
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      color: #92400e;
+      padding: 12px 14px;
+      border-radius: 10px;
+      font-size: 0.82rem;
+      margin-bottom: 15px;
+      line-height: 1.4;
+      text-align: left;
+    }
+
+    .btn-main {
+      background-color: var(--primary);
+      color: white;
+      border: none;
+      padding: 15px;
+      font-size: 1rem;
+      font-weight: 600;
+      border-radius: 12px;
+      cursor: pointer;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+
+    .btn-main:active { transform: scale(0.98); }
+    .btn-main.disabled, .btn-main:disabled {
+      background-color: #94a3b8 !important;
+      cursor: not-allowed;
+      opacity: 0.7;
+    }
+
+    .btn-danger {
+      background-color: var(--danger);
+      color: white;
+      border: none;
+      padding: 15px;
+      font-size: 1rem;
+      font-weight: 600;
+      border-radius: 12px;
+      cursor: pointer;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-takeover {
+      background-color: #d97706;
+      color: white;
+      border: none;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 10px;
+      width: 100%;
+    }
+
+    .broadcaster-stats {
+      display: flex;
+      justify-content: space-around;
+      background: var(--primary-light);
+      border: 1px solid #c8e6c9;
+      padding: 12px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      font-size: 0.9rem;
+      color: var(--primary-dark);
+    }
+
+    .meter-container {
+      background: #e2e8f0;
+      border-radius: 8px;
+      height: 12px;
+      width: 100%;
+      overflow: hidden;
+      margin: 10px 0 20px;
+    }
+
+    .meter-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #16a34a 0%, #eab308 75%, #dc2626 100%);
+      transition: width 0.05s linear;
+    }
+
+    .pin-input {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 1rem;
+      text-align: center;
+      margin-bottom: 15px;
+    }
+
+    .settings-box {
+      margin-top: 20px;
+      padding-top: 15px;
+      border-top: 1px solid var(--border);
+      text-align: left;
+    }
+
+    .settings-toggle {
+      background: none;
+      border: none;
+      color: var(--primary);
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-bottom: 10px;
+    }
+
+    .logout-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      margin-top: 15px;
+      text-decoration: underline;
+      cursor: pointer;
+      width: 100%;
+      text-align: center;
+    }
+
+    .footer {
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 24px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div class="top-bar">
+      <div class="masjid-brand" id="displayBrandName"><span>🕌</span> Masjid Live</div>
+      <button class="btn-switch-mode" id="btnToggleMode">
+        <span id="switchIcon">🎙️</span>
+        <span id="switchText">Broadcaster Login</span>
+      </button>
+    </div>
+
+    <div class="header">
+      <div class="bismillah">بِسْمِ ٱللَّٰهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ</div>
+      <h1 class="title" id="displayMainTitle">Jumu'ah Audio Stream</h1>
+      <p class="subtitle" id="displaySubtitle">Live Khutbah &amp; Community Broadcast</p>
+    </div>
+
+    <!-- VIEW 1: LISTENER -->
+    <div class="card" id="viewListener">
+      <div id="listenerStatusBadge" class="status-badge offline">
+        <span class="dot"></span>
+        <span id="listenerStatusText">Broadcast Offline</span>
+      </div>
+
+      <div class="wave-box" id="listenerWaveBox">
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+      </div>
+
+      <div class="wakelock-pill" id="listenerWakePill">
+        <span>💡</span>
+        <span id="listenerWakeText">Screen will stay awake while listening</span>
+      </div>
+
+      <p id="listenerMsg" style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 20px;">
+        Waiting for the broadcast to begin...
+      </p>
+
+      <button id="btnPlayAudio" class="btn-main disabled" disabled>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        <span id="btnPlayAudioText">Waiting for Stream</span>
+      </button>
+
+      <button id="btnStopListening" class="btn-danger" style="display: none; margin-top: 10px;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>
+        <span>Pause Audio</span>
+      </button>
+    </div>
+
+    <!-- VIEW 2: ADMIN PASSWORD -->
+    <div class="card" id="viewAuth" style="display: none;">
+      <h2 style="font-size: 1.2rem; color: var(--primary-dark); margin-bottom: 6px;">Broadcaster Login</h2>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 18px;">
+        Enter password to access microphone controls.
+      </p>
+      
+      <input type="password" id="inputPass" class="pin-input" placeholder="Enter password...">
+      
+      <div style="display: flex; gap: 10px;">
+        <button class="btn-switch-mode" style="flex: 1; justify-content: center;" id="btnCancelAuth">Cancel</button>
+        <button class="btn-main" style="flex: 1;" id="btnSubmitAuth">Unlock</button>
+      </div>
+    </div>
+
+    <!-- VIEW 3: BROADCASTER CONSOLE -->
+    <div class="card" id="viewBroadcaster" style="display: none;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+        <span style="font-weight: 700; color: var(--primary-dark); font-size: 1.1rem;">Broadcast Control</span>
+        <span id="bcastBadge" class="status-badge offline" style="margin-bottom: 0;">Ready</span>
+      </div>
+
+      <div class="lock-banner" id="adminClashBanner">
+        <div>🔒 <strong>Broadcast In Progress:</strong> An active session is currently registered in the cloud.</div>
+        <button class="btn-takeover" id="btnForceReset">🔄 Force Reset &amp; Unlock Stream</button>
+      </div>
+
+      <div class="broadcaster-stats">
+        <div>Listeners: <strong id="statListenerCount" style="color: var(--primary);">0</strong></div>
+        <div>Audio: <strong style="color: var(--primary);">64k Studio MP3</strong></div>
+      </div>
+
+      <div style="text-align: left; font-size: 0.8rem; font-weight: 600; color: var(--text-muted);">
+        Microphone Audio Level:
+      </div>
+      <div class="meter-container">
+        <div id="meterFill" class="meter-fill"></div>
+      </div>
+
+      <button id="btnStartBroadcast" class="btn-main">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+        <span id="btnStartBroadcastText">Start Phone Broadcast</span>
+      </button>
+
+      <button id="btnStopBroadcast" class="btn-danger" style="display: none;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>
+        <span>End Broadcast</span>
+      </button>
+
+      <div class="settings-box">
+        <button class="settings-toggle" id="btnManualReset">
+          <span>🔄 Reset / Unlock Stream</span>
+        </button>
+      </div>
+
+      <button class="logout-btn" id="btnLogoutAdmin">🔒 Lock &amp; Return to Listener View</button>
+    </div>
+
+    <div class="footer">
+      Cloudflare Calls WebRTC &bull; 64 kbps Studio MP3 Audio &bull; 1,000 GB Free Egress
+    </div>
+  </div>
+
+  <audio id="audioPlayer" autoplay playsinline></audio>
+
+  <script>
+    /**
+     * ==========================================================
+     * 🕌 MOSQUE CUSTOMIZATION SETTINGS
+     * ==========================================================
+     */
+    const CONFIG = {
+      MASJID_NAME: "Masjid Live",
+      MAIN_TITLE: "Jumu'ah Audio Stream",
+      SUBTITLE: "Live Khutbah & Community Broadcast",
+      WORKER_API: "https://jumua-broadcaster.docfloweditor.workers.dev"
+    };
+
+    document.getElementById('displayBrandName').innerHTML = `<span>🕌</span> ${CONFIG.MASJID_NAME}`;
+    document.getElementById('displayMainTitle').textContent = CONFIG.MAIN_TITLE;
+    document.getElementById('displaySubtitle').textContent = CONFIG.SUBTITLE;
+
+    let myDeviceToken = localStorage.getItem('masjid_admin_device_token');
+    if (!myDeviceToken) {
+      myDeviceToken = 'admin-' + Math.random().toString(36).substring(2, 12);
+      localStorage.setItem('masjid_admin_device_token', myDeviceToken);
+    }
+
+    async function apiFetch(endpoint, method = 'GET', bodyData = null) {
+      const options = {
+        method,
+        headers: { 'Content-Type': 'application/json' }
+      };
+      if (bodyData) {
+        options.body = JSON.stringify(bodyData);
+      }
+
+      const res = await fetch(`${CONFIG.WORKER_API}${endpoint}`, options);
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        const err = new Error(data.error || `Server request failed (HTTP ${res.status})`);
+        err.isOccupied = data.isOccupied;
+        throw err;
+      }
+      return data;
+    }
+
+    /* --- DOM Elements --- */
+    const viewListener = document.getElementById('viewListener');
+    const viewAuth = document.getElementById('viewAuth');
+    const viewBroadcaster = document.getElementById('viewBroadcaster');
+    const btnToggleMode = document.getElementById('btnToggleMode');
+    const switchText = document.getElementById('switchText');
+    const switchIcon = document.getElementById('switchIcon');
+
+    const listenerStatusBadge = document.getElementById('listenerStatusBadge');
+    const listenerStatusText = document.getElementById('listenerStatusText');
+    const listenerWaveBox = document.getElementById('listenerWaveBox');
+    const listenerMsg = document.getElementById('listenerMsg');
+    const btnPlayAudio = document.getElementById('btnPlayAudio');
+    const btnPlayAudioText = document.getElementById('btnPlayAudioText');
+    const btnStopListening = document.getElementById('btnStopListening');
+    const listenerWakePill = document.getElementById('listenerWakePill');
+    const audioPlayer = document.getElementById('audioPlayer');
+
+    const inputPass = document.getElementById('inputPass');
+    const btnSubmitAuth = document.getElementById('btnSubmitAuth');
+    const btnCancelAuth = document.getElementById('btnCancelAuth');
+    const btnStartBroadcast = document.getElementById('btnStartBroadcast');
+    const btnStartBroadcastText = document.getElementById('btnStartBroadcastText');
+    const btnStopBroadcast = document.getElementById('btnStopBroadcast');
+    const btnLogoutAdmin = document.getElementById('btnLogoutAdmin');
+    const bcastBadge = document.getElementById('bcastBadge');
+    const statListenerCount = document.getElementById('statListenerCount');
+    const meterFill = document.getElementById('meterFill');
+    const adminClashBanner = document.getElementById('adminClashBanner');
+    const btnForceReset = document.getElementById('btnForceReset');
+    const btnManualReset = document.getElementById('btnManualReset');
+
+    /* --- State --- */
+    let currentMode = 'listener';
+    let peerConnection = null;
+    let localMicStream = null;
+    let currentListenerSessionId = null;
+    let audioContext = null;
+    let meterAnimFrame = null;
+    let wakeLockSentinel = null;
+    let broadcasterAudioAnchor = null;
+    let isBroadcasting = false;
+    let isListening = false;
+    let isConnecting = false;
+    let isOtherDeviceBroadcasting = false;
+    let idleTimer = null;
+    let listenerPollTimer = null;
+    let broadcasterStatsTimer = null;
+
+    /* ==========================================================
+       1. SCREEN WAKE LOCK & BACKGROUND MEDIA SESSION
+       ========================================================== */
+    async function acquireWakeLock() {
+      if ('wakeLock' in navigator) {
+        try {
+          wakeLockSentinel = await navigator.wakeLock.request('screen');
+          listenerWakePill.classList.add('active');
+          listenerWakePill.innerHTML = `<span>💡</span> Screen Kept Awake (Active)`;
+          wakeLockSentinel.addEventListener('release', () => {
+            wakeLockSentinel = null;
+          });
+        } catch (err) {}
+      }
+    }
+
+    function releaseWakeLock() {
+      if (wakeLockSentinel) {
+        wakeLockSentinel.release().then(() => wakeLockSentinel = null);
+      }
+      listenerWakePill.classList.remove('active');
+      listenerWakePill.innerHTML = `<span>💡</span> Screen will stay awake while listening`;
+    }
+
+    function setupMediaSession(isBroadcasterRole) {
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: isBroadcasterRole ? "🔴 ON AIR — Broadcasting Khutbah" : CONFIG.MAIN_TITLE,
+          artist: CONFIG.MASJID_NAME,
+          album: "Live Jumu'ah Broadcast",
+          artwork: [
+            { src: "https://img.icons8.com/fluency/96/mosque.png", sizes: "96x96", type: "image/png" },
+            { src: "https://img.icons8.com/fluency/192/mosque.png", sizes: "192x192", type: "image/png" }
+          ]
+        });
+
+        if (isBroadcasterRole) {
+          navigator.mediaSession.setActionHandler('stop', () => stopBroadcasting());
+        } else {
+          navigator.mediaSession.setActionHandler('play', () => {
+            if (audioPlayer.srcObject) audioPlayer.play();
+          });
+          navigator.mediaSession.setActionHandler('pause', () => {
+            audioPlayer.pause();
+          });
+          navigator.mediaSession.setActionHandler('stop', () => {
+            btnStopListening.click();
+          });
+        }
+      }
+    }
+
+    function clearMediaSession() {
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = 'none';
+      }
+    }
+
+    function startBroadcasterAudioAnchor() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        gain.gain.value = 0.0001; // Inaudible anchor
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        broadcasterAudioAnchor = { ctx, osc };
+      } catch (e) {}
+    }
+
+    function stopBroadcasterAudioAnchor() {
+      if (broadcasterAudioAnchor) {
+        try {
+          broadcasterAudioAnchor.osc.stop();
+          broadcasterAudioAnchor.ctx.close();
+        } catch (e) {}
+        broadcasterAudioAnchor = null;
+      }
+    }
+
+    document.addEventListener('visibilitychange', async () => {
+      if (document.visibilityState === 'visible' && (isBroadcasting || isListening)) {
+        await acquireWakeLock();
+      }
+    });
+
+    window.addEventListener('beforeunload', (e) => {
+      if (isBroadcasting) {
+        e.preventDefault();
+        e.returnValue = 'A broadcast is currently live. Leaving will end the stream.';
+      }
+      if (peerConnection) peerConnection.close();
+      if (currentListenerSessionId) {
+        navigator.sendBeacon(`${CONFIG.WORKER_API}/api/leave`, JSON.stringify({ sessionId: currentListenerSessionId }));
+      }
+    });
+
+    /* ==========================================================
+       2. ADMIN AUTHENTICATION (Zero Passwords in Code)
+       ========================================================== */
+    function resetIdleTimer() {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        if (!isBroadcasting && currentMode === 'broadcaster') {
+          sessionStorage.removeItem('masjid_admin_logged_in');
+          showView('listener');
+        }
+      }, 300000);
+    }
+
+    ['touchstart', 'mousemove', 'keydown', 'click'].forEach(evt => {
+      document.addEventListener(evt, resetIdleTimer);
+    });
+
+    btnToggleMode.addEventListener('click', () => {
+      if (sessionStorage.getItem('masjid_admin_logged_in') === 'true') {
+        showView(currentMode === 'broadcaster' ? 'listener' : 'broadcaster');
+      } else {
+        showView('auth');
+      }
+    });
+
+    btnCancelAuth.addEventListener('click', () => showView('listener'));
+
+    btnSubmitAuth.addEventListener('click', () => {
+      const entered = inputPass.value.trim();
+      if (!entered) {
+        alert('Please enter your admin password.');
+        return;
+      }
+      // Saves entered password into session to send to Cloudflare Secret
+      sessionStorage.setItem('masjid_admin_logged_in', 'true');
+      sessionStorage.setItem('masjid_admin_pass_cache', entered);
+      showView('broadcaster');
+      inputPass.value = '';
+      resetIdleTimer();
+    });
+
+    inputPass.addEventListener('keyup', (e) => {
+      if (e.key === 'Enter') btnSubmitAuth.click();
+    });
+
+    btnLogoutAdmin.addEventListener('click', () => {
+      if (isBroadcasting) stopBroadcasting();
+      sessionStorage.removeItem('masjid_admin_logged_in');
+      sessionStorage.removeItem('masjid_admin_pass_cache');
+      showView('listener');
+    });
+
+    async function triggerForceReset() {
+      const cachedPass = sessionStorage.getItem('masjid_admin_pass_cache') || '';
+      try {
+        await apiFetch('/api/force-reset', 'POST', { pass: cachedPass });
+        alert('Broadcast stream reset successfully! You can now start your broadcast.');
+        isOtherDeviceBroadcasting = false;
+        checkAdminBroadcastClash();
+      } catch (err) {
+        alert('Reset Error: ' + err.message);
+      }
+    }
+
+    btnForceReset.addEventListener('click', triggerForceReset);
+    btnManualReset.addEventListener('click', triggerForceReset);
+
+    function showView(mode) {
+      currentMode = mode;
+      viewListener.style.display = (mode === 'listener') ? 'block' : 'none';
+      viewAuth.style.display = (mode === 'auth') ? 'block' : 'none';
+      viewBroadcaster.style.display = (mode === 'broadcaster') ? 'block' : 'none';
+
+      const isLoggedIn = sessionStorage.getItem('masjid_admin_logged_in') === 'true';
+
+      if (mode === 'listener') {
+        switchText.textContent = isLoggedIn ? 'Broadcaster Console' : 'Broadcaster Login';
+        switchIcon.textContent = '🎙️';
+        clearInterval(broadcasterStatsTimer);
+        startContinuousHeartbeat();
+      } else if (mode === 'broadcaster') {
+        switchText.textContent = 'Listener Mode';
+        switchIcon.textContent = '🎧';
+        teardownListenerEngine();
+        checkAdminBroadcastClash();
+      } else if (mode === 'auth') {
+        inputPass.focus();
+      }
+    }
+
+    async function checkAdminBroadcastClash() {
+      if (isBroadcasting) return;
+
+      try {
+        const s = await apiFetch('/api/status', 'GET');
+        if (s.isLive && s.broadcasterToken !== myDeviceToken) {
+          isOtherDeviceBroadcasting = true;
+          adminClashBanner.style.display = 'block';
+          btnStartBroadcast.disabled = true;
+          btnStartBroadcast.classList.add('disabled');
+          btnStartBroadcastText.textContent = 'Locked (Other Admin Live)';
+          bcastBadge.className = 'status-badge locked';
+          bcastBadge.textContent = 'Occupied';
+        } else {
+          isOtherDeviceBroadcasting = false;
+          adminClashBanner.style.display = 'none';
+          btnStartBroadcast.disabled = false;
+          btnStartBroadcast.classList.remove('disabled');
+          btnStartBroadcastText.textContent = 'Start Phone Broadcast';
+          bcastBadge.className = 'status-badge offline';
+          bcastBadge.textContent = 'Ready';
+        }
+      } catch (e) {}
+    }
+
+    /* ==========================================================
+       3. LISTENER ENGINE (Fast Auto-Sync & Clean Audio Pipeline)
+       ========================================================== */
+    function startContinuousHeartbeat() {
+      clearTimeout(listenerPollTimer);
+
+      async function runHeartbeat() {
+        if (currentMode === 'broadcaster' || isBroadcasting) return;
+
+        try {
+          const statusData = await apiFetch('/api/status', 'GET');
+          const isStreamLive = !!(statusData && statusData.isLive);
+
+          if (isStreamLive) {
+            isOtherDeviceBroadcasting = true;
+            if (!isListening && !isConnecting && !peerConnection) {
+              initListenerEngine();
+            }
+          } else {
+            isOtherDeviceBroadcasting = false;
+            if (isListening || peerConnection) {
+              teardownListenerEngine();
+            } else {
+              setListenerOfflineUI();
+            }
+          }
+        } catch (e) {}
+
+        const jitter = Math.floor(Math.random() * 500);
+        listenerPollTimer = setTimeout(runHeartbeat, 1500 + jitter);
+      }
+
+      runHeartbeat();
+    }
+
+    async function initListenerEngine() {
+      if (peerConnection || isBroadcasting || isConnecting) return;
+      isConnecting = true;
+
+      try {
+        peerConnection = new RTCPeerConnection({
+          iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }],
+          bundlePolicy: 'max-bundle'
+        });
+
+        peerConnection.ontrack = (event) => {
+          setListenerLiveUI();
+          const stream = event.streams[0] || new MediaStream([event.track]);
+          audioPlayer.srcObject = stream;
+          audioPlayer.muted = false;
+          audioPlayer.volume = 1.0;
+
+          audioPlayer.play().then(() => {
+            onAudioPlaybackStarted();
+          }).catch(() => {
+            btnPlayAudio.classList.remove('disabled');
+            btnPlayAudio.disabled = false;
+            btnPlayAudioText.textContent = 'Tap to Listen';
+          });
+        };
+
+        const transceiver = peerConnection.addTransceiver('audio', { direction: 'recvonly' });
+        if (transceiver.receiver && 'playoutDelayHint' in transceiver.receiver) {
+          transceiver.receiver.playoutDelayHint = 0;
+        }
+
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+
+        const data = await apiFetch('/api/subscribe', 'POST', { sdp: offer.sdp });
+        currentListenerSessionId = data.sessionId;
+
+        await peerConnection.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: data.sdp }));
+
+        const pullTrackWhenConnected = async () => {
+          if (peerConnection.connectionState === 'connected') {
+            const pullData = await apiFetch('/api/pull-track', 'POST', { sessionId: data.sessionId });
+
+            if (pullData && pullData.renegotiationOffer) {
+              await peerConnection.setRemoteDescription(new RTCSessionDescription({
+                type: 'offer',
+                sdp: pullData.renegotiationOffer
+              }));
+
+              const renegotiateAnswer = await peerConnection.createAnswer();
+              await peerConnection.setLocalDescription(renegotiateAnswer);
+
+              await apiFetch('/api/renegotiate-answer', 'POST', {
+                sessionId: data.sessionId,
+                sdp: renegotiateAnswer.sdp
+              });
+            }
+          }
+        };
+
+        peerConnection.addEventListener('connectionstatechange', pullTrackWhenConnected);
+
+        if (peerConnection.connectionState === 'connected') {
+          await pullTrackWhenConnected();
+        }
+
+      } catch (err) {
+        setListenerOfflineUI();
+      } finally {
+        isConnecting = false;
+      }
+    }
+
+    function onAudioPlaybackStarted() {
+      isListening = true;
+      acquireWakeLock();
+      setupMediaSession(false);
+      btnPlayAudio.style.display = 'none';
+      btnStopListening.style.display = 'flex';
+    }
+
+    btnPlayAudio.addEventListener('click', () => {
+      acquireWakeLock();
+      if (audioPlayer.srcObject) {
+        audioPlayer.muted = false;
+        audioPlayer.play().then(() => {
+          onAudioPlaybackStarted();
+        }).catch(() => {});
+      } else {
+        btnPlayAudioText.textContent = 'Connecting...';
+        initListenerEngine();
+      }
+    });
+
+    btnStopListening.addEventListener('click', () => {
+      isListening = false;
+      audioPlayer.pause();
+      releaseWakeLock();
+      clearMediaSession();
+      btnStopListening.style.display = 'none';
+      btnPlayAudio.style.display = 'flex';
+      btnPlayAudio.classList.remove('disabled');
+      btnPlayAudio.disabled = false;
+      btnPlayAudioText.textContent = 'Resume Listening';
+    });
+
+    function setListenerLiveUI() {
+      listenerStatusBadge.className = 'status-badge live';
+      listenerStatusText.textContent = 'Live Now';
+      listenerWaveBox.classList.add('is-live');
+      listenerMsg.textContent = 'Connected to Masjid live audio stream.';
+      btnPlayAudio.classList.remove('disabled');
+      btnPlayAudio.disabled = false;
+      btnPlayAudioText.textContent = 'Listen Live';
+    }
+
+    function setListenerOfflineUI() {
+      if (isListening) {
+        isListening = false;
+        releaseWakeLock();
+        clearMediaSession();
+      }
+      listenerStatusBadge.className = 'status-badge offline';
+      listenerStatusText.textContent = 'Broadcast Offline';
+      listenerWaveBox.classList.remove('is-live');
+      listenerMsg.textContent = 'Waiting for the broadcast to begin...';
+      btnPlayAudio.classList.add('disabled');
+      btnPlayAudio.disabled = true;
+      btnPlayAudioText.textContent = 'Waiting for Stream';
+      btnPlayAudio.style.display = 'flex';
+      btnStopListening.style.display = 'none';
+      audioPlayer.srcObject = null;
+    }
+
+    function teardownListenerEngine() {
+      clearTimeout(listenerPollTimer);
+      if (currentListenerSessionId) {
+        apiFetch('/api/leave', 'POST', { sessionId: currentListenerSessionId }).catch(() => {});
+        currentListenerSessionId = null;
+      }
+      if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+      }
+      setListenerOfflineUI();
+    }
+
+    /* ==========================================================
+       4. BROADCASTER ENGINE (Studio MP3 Quality - 64 kbps)
+       ========================================================== */
+    btnStartBroadcast.addEventListener('click', async () => {
+      btnStartBroadcast.disabled = true;
+      btnStartBroadcast.innerHTML = `<span>Connecting to Cloudflare...</span>`;
+      bcastBadge.className = 'status-badge loading';
+      bcastBadge.textContent = 'Connecting';
+
+      try {
+        localMicStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            echoCancellation: false,  // Disables phasey cancellation on recitation
+            noiseSuppression: false,  // Stops browser from cutting off high-pitch notes & Madd
+            autoGainControl: false,   // Prevents volume pumping on loud Takbeerat
+            sampleRate: 48000
+          },
+          video: false
+        });
+
+        await acquireWakeLock();
+        startBroadcasterAudioAnchor();
+        setupMediaSession(true);
+
+        peerConnection = new RTCPeerConnection({
+          iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }],
+          bundlePolicy: 'max-bundle'
+        });
+
+        const audioTrack = localMicStream.getAudioTracks()[0];
+        const transceiver = peerConnection.addTransceiver(audioTrack, { direction: 'sendonly' });
+
+        if (transceiver.sender) {
+          const params = transceiver.sender.getParameters();
+          if (!params.encodings || params.encodings.length === 0) {
+            params.encodings = [{}];
+          }
+          params.encodings[0].maxBitrate = 64000; // 64 kbps full-band studio audio
+          transceiver.sender.setParameters(params).catch(() => {});
+        }
+
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+
+        const cachedPass = sessionStorage.getItem('masjid_admin_pass_cache') || '';
+
+        // Step 1: Session Init
+        const data = await apiFetch('/api/publish', 'POST', {
+          sdp: offer.sdp,
+          pass: cachedPass,
+          adminDeviceToken: myDeviceToken
+        });
+
+        if (!data || !data.sdp) {
+          throw new Error('Invalid response received from server.');
+        }
+
+        await peerConnection.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: data.sdp }));
+
+        // Step 2: Register Local Track
+        const registerTrackWhenConnected = async () => {
+          if (peerConnection.connectionState === 'connected') {
+            await apiFetch('/api/register-track', 'POST', {
+              sessionId: data.sessionId,
+              mid: transceiver.mid,
+              adminDeviceToken: myDeviceToken
+            });
+
+            isBroadcasting = true;
+            startVUMeter(localMicStream);
+
+            bcastBadge.className = 'status-badge live';
+            bcastBadge.textContent = 'ON AIR';
+            adminClashBanner.style.display = 'none';
+            btnStartBroadcast.style.display = 'none';
+            btnStopBroadcast.style.display = 'flex';
+
+            clearInterval(broadcasterStatsTimer);
+            broadcasterStatsTimer = setInterval(async () => {
+              try {
+                const s = await apiFetch('/api/status', 'GET');
+                statListenerCount.textContent = s.listenerCount || 0;
+              } catch (e) {}
+            }, 1500);
+          }
+        };
+
+        peerConnection.addEventListener('connectionstatechange', registerTrackWhenConnected);
+
+        if (peerConnection.connectionState === 'connected') {
+          await registerTrackWhenConnected();
+        }
+
+      } catch (err) {
+        if (err.isOccupied) {
+          isOtherDeviceBroadcasting = true;
+          checkAdminBroadcastClash();
+        } else {
+          alert('Broadcast Error:\n' + err.message);
+        }
+        stopBroadcasting();
+      }
+    });
+
+    btnStopBroadcast.addEventListener('click', stopBroadcasting);
+
+    async function stopBroadcasting() {
+      isBroadcasting = false;
+      releaseWakeLock();
+      stopBroadcasterAudioAnchor();
+      clearMediaSession();
+      clearInterval(broadcasterStatsTimer);
+
+      try {
+        await apiFetch('/api/stop', 'POST');
+      } catch (e) {}
+
+      if (localMicStream) {
+        localMicStream.getTracks().forEach(t => t.stop());
+        localMicStream = null;
+      }
+
+      if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+      }
+
+      if (audioContext) {
+        audioContext.close();
+        audioContext = null;
+      }
+
+      if (meterAnimFrame) {
+        cancelAnimationFrame(meterAnimFrame);
+      }
+
+      meterFill.style.width = '0%';
+      statListenerCount.textContent = '0';
+      bcastBadge.className = 'status-badge offline';
+      bcastBadge.textContent = 'Stopped';
+      btnStartBroadcast.style.display = 'flex';
+      btnStopBroadcast.style.display = 'none';
+      btnStartBroadcast.disabled = false;
+      btnStartBroadcast.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg> <span>Start Phone Broadcast</span>`;
+      checkAdminBroadcastClash();
+    }
+
+    /* --- VU Meter Visualizer --- */
+    function startVUMeter(stream) {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioContext.createMediaStreamSource(stream);
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      function renderMeter() {
+        analyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+        const avg = sum / dataArray.length;
+        const percentage = Math.min(100, Math.round((avg / 128) * 100));
+        meterFill.style.width = percentage + '%';
+        meterAnimFrame = requestAnimationFrame(renderMeter);
+      }
+      renderMeter();
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      startContinuousHeartbeat();
+      resetIdleTimer();
+
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('./sw.js').catch(() => {});
+      }
+    });
+  </script>
+</body>
+</html>
