@@ -1,6 +1,6 @@
 /**
  * Cloudflare Calls WebRTC SFU Backend (_worker.js)
- * Secure Password Check via Cloudflare Environment Secrets
+ * Instant Password Verification against Cloudflare Secret
  */
 
 const CALLS_APP_ID = "906d403c90d6a6c46f4ca27e4df82811";
@@ -54,12 +54,22 @@ export default {
 
     const url = new URL(request.url);
 
-    // SECURE: Reads password from Cloudflare dashboard secret (defaults to 'admin' if not set)
+    // Reads password securely from Cloudflare Secret (defaults to 'admin' if not set)
     const activeAdminPassword = env.ADMIN_PASSWORD || "admin";
 
     if (url.pathname.startsWith("/api/")) {
       try {
-        // 1. Status Check (Edge Micro-Cached)
+        // 1. Instant Password Verification: POST /api/verify-auth
+        if (url.pathname === "/api/verify-auth" && request.method === "POST") {
+          const body = await request.json().catch(() => ({}));
+          if (body.pass === activeAdminPassword) {
+            return json({ success: true, message: "Authorized" });
+          } else {
+            return json({ success: false, error: "Incorrect password." }, 401);
+          }
+        }
+
+        // 2. Status Check (Edge Micro-Cached)
         if (url.pathname === "/api/status") {
           const current = await getBroadcast(env);
           return json({ 
@@ -73,22 +83,21 @@ export default {
           });
         }
 
-        // 2. Force Reset / Unlock Stream
+        // 3. Force Reset / Unlock Stream
         if (url.pathname === "/api/force-reset" && request.method === "POST") {
           const body = await request.json().catch(() => ({}));
           if (body.pass !== activeAdminPassword) {
-            return json({ success: false, error: "Unauthorized" }, 401);
+            return json({ success: false, error: "Unauthorized: Invalid Password" }, 401);
           }
           await setBroadcast(env, null);
           return json({ success: true, message: "Stream reset successfully." });
         }
 
-        // 3. Broadcaster Start
+        // 4. Broadcaster Start
         if (url.pathname === "/api/publish" && request.method === "POST") {
           const body = await request.json().catch(() => ({}));
           const { sdp, pass, adminDeviceToken } = body;
 
-          // Secure verification against Cloudflare Secret
           if (pass !== activeAdminPassword) {
             return json({ success: false, error: "Unauthorized: Invalid Admin Password" }, 401);
           }
@@ -127,7 +136,7 @@ export default {
           });
         }
 
-        // 4. Broadcaster Register Track
+        // 5. Broadcaster Register Track
         if (url.pathname === "/api/register-track" && request.method === "POST") {
           const body = await request.json().catch(() => ({}));
           const { sessionId, mid, adminDeviceToken } = body;
@@ -162,7 +171,7 @@ export default {
           return json({ success: true });
         }
 
-        // 5. Listener Subscribe Step 1
+        // 6. Listener Subscribe Step 1
         if (url.pathname === "/api/subscribe" && request.method === "POST") {
           const current = await getBroadcast(env);
           if (!current || !current.isLive || !current.sessionId) {
@@ -193,7 +202,7 @@ export default {
           });
         }
 
-        // 6. Listener Subscribe Step 2: Pull Audio Track
+        // 7. Listener Subscribe Step 2: Pull Audio Track
         if (url.pathname === "/api/pull-track" && request.method === "POST") {
           const current = await getBroadcast(env);
           if (!current || !current.sessionId) {
@@ -228,7 +237,7 @@ export default {
           });
         }
 
-        // 7. Listener Complete Audio Connection
+        // 8. Listener Complete Audio Connection
         if (url.pathname === "/api/renegotiate-answer" && request.method === "POST") {
           const body = await request.json().catch(() => ({}));
           const { sessionId, sdp } = body;
@@ -245,7 +254,7 @@ export default {
           return json({ success: true });
         }
 
-        // 8. Listener Leave
+        // 9. Listener Leave
         if (url.pathname === "/api/leave" && request.method === "POST") {
           const current = await getBroadcast(env);
           if (current && current.listenerCount > 0) {
@@ -255,7 +264,7 @@ export default {
           return json({ success: true });
         }
 
-        // 9. Stop Broadcast
+        // 10. Stop Broadcast
         if (url.pathname === "/api/stop" && request.method === "POST") {
           await setBroadcast(env, null);
           return json({ success: true });
