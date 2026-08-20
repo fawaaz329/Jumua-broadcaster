@@ -1,6 +1,6 @@
 /**
- * Cloudflare Calls WebRTC SFU Backend (worker.js)
- * Fully Connected JUMUA_KV Database Sync
+ * Cloudflare Calls WebRTC SFU Backend (_worker.js)
+ * Fully Connected JUMUA_KV Database Sync & Multi-Admin Lock
  */
 
 const CALLS_APP_ID = "906d403c90d6a6c46f4ca27e4df82811";
@@ -54,14 +54,15 @@ export default {
 
     if (url.pathname.startsWith("/api/")) {
       try {
-        // 1. Status Check
+        // 1. Status Check & Live Listener Count
         if (url.pathname === "/api/status") {
           const current = await getBroadcast(env);
           return json({ 
             success: true, 
             isLive: !!(current && current.isLive),
             sessionId: current ? current.sessionId : null,
-            listenerCount: current ? (current.listenerCount || 0) : 0
+            listenerCount: current ? (current.listenerCount || 0) : 0,
+            broadcasterToken: current ? current.broadcasterToken : null
           });
         }
 
@@ -78,7 +79,7 @@ export default {
         // 3. Broadcaster Start
         if (url.pathname === "/api/publish" && request.method === "POST") {
           const body = await request.json().catch(() => ({}));
-          const { sdp, pass } = body;
+          const { sdp, pass, adminDeviceToken } = body;
 
           if (pass !== ADMIN_PASSWORD) {
             return json({ success: false, error: "Unauthorized: Invalid Admin Password" }, 401);
@@ -86,6 +87,15 @@ export default {
 
           if (!sdp) {
             return json({ success: false, error: "Missing SDP offer" }, 400);
+          }
+
+          const current = await getBroadcast(env);
+          if (current && current.isLive && current.broadcasterToken && current.broadcasterToken !== adminDeviceToken) {
+            return json({
+              success: false,
+              error: "Stream Occupied: Another Admin is currently broadcasting.",
+              isOccupied: true
+            }, 409);
           }
 
           const sessionRes = await fetch(`${CALLS_API}/sessions/new`, {
@@ -112,7 +122,7 @@ export default {
         // 4. Broadcaster Register Track & Publish to Global Database
         if (url.pathname === "/api/register-track" && request.method === "POST") {
           const body = await request.json().catch(() => ({}));
-          const { sessionId, mid } = body;
+          const { sessionId, mid, adminDeviceToken } = body;
 
           if (!sessionId) return json({ success: false, error: "Missing sessionId" }, 400);
 
@@ -137,6 +147,7 @@ export default {
             sessionId: sessionId,
             trackName: "masjid-audio",
             isLive: true,
+            broadcasterToken: adminDeviceToken,
             listenerCount: 0,
             startedAt: Date.now()
           });
